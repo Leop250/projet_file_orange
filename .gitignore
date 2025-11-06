@@ -1,0 +1,7 @@
+google-cloud-sdk/
+.venv/
+__pycache__/
+*.pyc
+data/
+artifacts/
+iam-backup-2025-11-05-143755.json
