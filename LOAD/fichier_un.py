@@ -6,7 +6,7 @@ import os
 csv_folder = r"C:\HETIC\2025-2026\Projet_File_0range\projet_file_orange\fichier_csv"
 project_id = "projet-fil-orange-477313"
 dataset_id = "air_quality_europe_monthly_avg"
-keyfile_path = r"/projet_file_orange/Load\keyfile.json"
+keyfile_path = r"projet_file_orange/LOAD/clé_secrete/keyfile.json.json"
 
 
 client = bigquery.Client.from_service_account_json(keyfile_path, project=project_id)

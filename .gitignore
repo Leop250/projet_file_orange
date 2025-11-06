@@ -88,12 +88,12 @@ venv.bak/
 
 # Profiling data
 .prof
-
+/Scripts
 # mypy
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
+.projet_file_orange/Scripts
 # Pyre type checker
 .pyre/
 
