@@ -11,6 +11,7 @@ __pycache__/
 build/
 develop-eggs/
 dist/
+LOAD/clé_secrete/projet-fil-orange-477313-427efccdf36c.json
 downloads/
 eggs/
 .eggs/
@@ -98,7 +99,7 @@ dmypy.json
 
 # pytype static type analyzer
 .pytype/
-
+LOAD/clé_secrete/
 # Cython debug symbols
 cython_debug/
 
