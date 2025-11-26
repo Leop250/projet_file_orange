@@ -14,7 +14,7 @@ export default function Page() {
     async function fetchStations() {
       try {
         setLoading(true);
-        const response = await fetch('/api/weather-data');
+        const response = await fetch('/api/weather_data');
         
         if (!response.ok) {
           throw new Error('Failed to fetch weather data');
