@@ -2,7 +2,7 @@
 
 import { useContext, useEffect, useState } from 'react';
 import { GoogleMap, LoadScript, Marker, InfoWindow } from '@react-google-maps/api';
-import { WeatherContext } from './googleMapContext';
+import { WeatherContext } from './google_map_context';
 
 const containerStyle = {
   width: '100%',

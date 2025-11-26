@@ -1,8 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ContextProvider } from '../components/googleMapContext';
-import GoogleMapComponent from '../components/googleMapComponent';
+import { ContextProvider } from '../components/google_map_context';
+import GoogleMapComponent from '../components/google_map_component';
 
 export default function Page() {
   const [stations, setStations] = useState<any[]>([]);
