@@ -1,23 +1,20 @@
 # Cloud Build trigger for GitHub repo Leop250/projet_file_orange (branch dev)
-# Apply with: gcloud beta builds triggers import --source=cloudbuild-trigger.yaml --project=PROJECT_ID
-# Replace PROJECT_ID and serviceAccount before applying.
-apiVersion: cloudbuild.googleapis.com/v1
-kind: BuildTrigger
-metadata:
-  name: projet-file-orange-dev
-spec:
-  description: Build & test on dev branch
-  github:
-    owner: Leop250
-    name: projet_file_orange
-    push:
-      branch: ^dev$
-  includedFiles:
-    - '**/*.py'
-    - requirements.txt
-  ignoredFiles:
-    - '.gitignore'
-    - '.env'
+# Import with: gcloud beta builds triggers import --source=cloudbuild-trigger.yaml --project=projet-fil-orange-477313
+
+name: projet-file-orange-dev
+description: Build & test on dev branch
+github:
+  owner: Leop250
+  name: projet_file_orange
+  push:
+    branch: ^dev$
+includedFiles:
+  - '**/*.py'
+  - requirements.txt
+ignoredFiles:
+  - '.gitignore'
+  - '.env'
+build:
   substitutions:
     _REGION: europe-west1
     _SERVICE: projet-file-orange
@@ -31,4 +28,5 @@ spec:
           pip install --no-cache-dir -r requirements.txt
           pytest
   timeout: 1200s
-  serviceAccount: projects/PROJECT_ID/serviceAccounts/CLOUD_BUILD_SA_EMAIL
+# To use a custom service account, uncomment and set a valid email below; otherwise the default Cloud Build SA is used.
+# serviceAccount: projects/projet-fil-orange-477313/serviceAccounts/PROJECT_NUMBER@cloudbuild.gserviceaccount.com
