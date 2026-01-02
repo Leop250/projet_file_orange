@@ -1,44 +1,46 @@
 import { NextResponse } from 'next/server';
-import { Storage } from '@google-cloud/storage';
-import csv from 'csv-parser';
-import { WeatherStation } from '@/types';
+import { BigQuery } from '@google-cloud/bigquery';
 
-const storage = new Storage();
-const bucketName = 'projet-orange-bucket';
-const fileName = 'mesures_actuelles.csv';
+// Initialisation du client (authentification automatique sur Cloud Run)
+const bigquery = new BigQuery();
 
 export async function GET() {
-  const results: WeatherStation[] = [];
+  try {
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+    
+    // La requête SQL magique
+    // QUALIFY ... = 1 permet de ne garder que la ligne la plus récente pour chaque ville
+    const query = `
+      SELECT 
+        city,
+        country,
+        lat, 
+        lon,
+        temp_c,
+        condition,
+        humidity,
+        wind_kph,
+        FORMAT_TIMESTAMP('%Y-%m-%dT%H:%M:%S', timestamp) as last_update
+      FROM \`${projectId}.weather_data.weatherapicom\`
+      WHERE timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 24 HOUR)
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY city ORDER BY timestamp DESC) = 1
+    `;
 
-  return new Promise((resolve) => {
-    const file = storage.bucket(bucketName).file(fileName);
+    // Exécution de la requête
+    const [rows] = await bigquery.query(query);
 
-    // Vérifie si le fichier existe avant de lire
-    file.exists().then(([exists]) => {
-      if (!exists) {
-        resolve(NextResponse.json({ error: 'Fichier de données introuvable' }, { status: 404 }));
-        return;
+    return NextResponse.json(rows, {
+      headers: {
+        'Cache-Control': 'no-store, max-age=0', // Pas de cache, on veut du temps réel
+        'Content-Type': 'application/json'
       }
-
-      // Création du stream de lecture depuis le Cloud
-      file.createReadStream()
-        .pipe(csv())
-        .on('data', (data: any) => {
-            // Nettoyage éventuel et ajout au tableau
-            results.push(data as WeatherStation);
-        })
-        .on('end', () => {
-          resolve(NextResponse.json(results, {
-            headers: {
-              'Cache-Control': 'no-store, max-age=0', // ne pas mettre en cache pour avoir les maj
-              'Content-Type': 'application/json'
-            }
-          }));
-        })
-        .on('error', (error) => {
-          console.error('Erreur lecture GCS:', error);
-          resolve(NextResponse.json({ error: 'Erreur lecture données' }, { status: 500 }));
-        });
     });
-  });
+
+  } catch (error) {
+    console.error('Erreur BigQuery:', error);
+    return NextResponse.json(
+      { error: 'Erreur lors de la récupération des données météo' }, 
+      { status: 500 }
+    );
+  }
 }
