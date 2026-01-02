@@ -1,55 +1,44 @@
-import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
+import { NextResponse } from 'next/server';
+import { Storage } from '@google-cloud/storage';
 import csv from 'csv-parser';
 import { WeatherStation } from '@/types';
 
-export async function GET(request: NextRequest) {
-  try {
-    const csvFilePath = path.join(process.cwd(), 'public', 'air_quality_europe.csv');
-    
-    // Check if file exists
-    if (!fs.existsSync(csvFilePath)) {
-      return NextResponse.json(
-        { error: 'CSV file not found' },
-        { status: 404 }
-      );
-    }
+const storage = new Storage();
+const bucketName = 'projet-orange-bucket';
+const fileName = 'mesures_actuelles.csv';
 
-    const results: WeatherStation[] = [];
+export async function GET() {
+  const results: WeatherStation[] = [];
 
-    return new Promise((resolve) => {
-      fs.createReadStream(csvFilePath)
+  return new Promise((resolve) => {
+    const file = storage.bucket(bucketName).file(fileName);
+
+    // Vérifie si le fichier existe avant de lire
+    file.exists().then(([exists]) => {
+      if (!exists) {
+        resolve(NextResponse.json({ error: 'Fichier de données introuvable' }, { status: 404 }));
+        return;
+      }
+
+      // Création du stream de lecture depuis le Cloud
+      file.createReadStream()
         .pipe(csv())
-        .on('data', (data) => {
-          results.push(data);
+        .on('data', (data: any) => {
+            // Nettoyage éventuel et ajout au tableau
+            results.push(data as WeatherStation);
         })
         .on('end', () => {
-          // Optional: Limit results for testing or performance
-          // const limitedResults = results.slice(0, 100);
-          
-          resolve(
-            NextResponse.json(results, {
-              headers: {
-                'Content-Type': 'application/json',
-                'Cache-Control': 'max-age=3600' // Cache for 1 hour
-              }
-            })
-          );
+          resolve(NextResponse.json(results, {
+            headers: {
+              'Cache-Control': 'no-store, max-age=0', // ne pas mettre en cache pour avoir les maj
+              'Content-Type': 'application/json'
+            }
+          }));
         })
         .on('error', (error) => {
-          resolve(
-            NextResponse.json(
-              { error: 'Failed to parse CSV', details: error.message },
-              { status: 500 }
-            )
-          );
+          console.error('Erreur lecture GCS:', error);
+          resolve(NextResponse.json({ error: 'Erreur lecture données' }, { status: 500 }));
         });
     });
-  } catch (error) {
-    return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    );
-  }
+  });
 }
