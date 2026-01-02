@@ -1,6 +1,7 @@
 import argparse
 import json
 import logging
+import threading
 from pathlib import Path
 
 from air_quality.cities import DEFAULT_CITIES, City, cities_from_overrides
@@ -80,6 +81,51 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Set logging verbosity.",
     )
     return parser
+
+
+def _ingest_async() -> None:
+    """Kick off ingestion in a background thread for HTTP entrypoint."""
+    try:
+        settings = load_settings()
+        storage = AirQualityStorage(settings.database_path)
+        result = ingest_air_quality_data(
+            api_key=settings.api_key,
+            storage=storage,
+            cities=list(DEFAULT_CITIES),
+            forecast_hours=72,
+            include_forecast=True,
+        )
+        LOGGER.info(
+            "Async ingest done. Success: %s; Failures: %s",
+            ", ".join(result.successes) or "None",
+            ", ".join(result.failures) or "None",
+        )
+    except Exception as exc:  # pylint: disable=broad-except
+        LOGGER.exception("Async ingest failed: %s", exc)
+
+
+def app(environ, start_response):
+    """Minimal WSGI app so Cloud Run can route HTTP requests.
+
+    GET /health -> 200 OK
+    GET / (or any other path) -> 202 Accepted and triggers background ingest
+    """
+
+    path = environ.get("PATH_INFO", "/")
+    method = environ.get("REQUEST_METHOD", "GET").upper()
+
+    if path == "/health":
+        body = b"ok"
+        status = "200 OK"
+    else:
+        # Avoid blocking the request on the ingest; run it asynchronously.
+        threading.Thread(target=_ingest_async, daemon=True).start()
+        body = b"ingest started"
+        status = "202 Accepted"
+
+    headers = [("Content-Type", "text/plain"), ("Content-Length", str(len(body)))]
+    start_response(status, headers)
+    return [body]
 
 
 def main() -> None:

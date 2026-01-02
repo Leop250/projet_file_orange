@@ -1,5 +1,9 @@
 import json
-import sqlite3
+# Prefer bundled sqlite (pysqlite3) for environments lacking system libsqlite3
+try:
+    import pysqlite3 as sqlite3
+except ImportError:
+    import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterable, List, Optional
