@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import fs from 'fs';
 import path from 'path';
 import csv from 'csv-parser';
+import { WeatherStation } from '@/types';
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,7 +16,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const results: any[] = [];
+    const results: WeatherStation[] = [];
 
     return new Promise((resolve) => {
       fs.createReadStream(csvFilePath)

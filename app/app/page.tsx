@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { ContextProvider } from '../components/google_map_context';
 import GoogleMapComponent from '../components/google_map_component';
+import { WeatherStation } from '@/types';
 
 export default function Page() {
-  const [stations, setStations] = useState<any[]>([]);
+  const [stations, setStations] = useState<WeatherStation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
