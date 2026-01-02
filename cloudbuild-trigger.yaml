@@ -27,6 +27,10 @@ build:
           set -euo pipefail
           pip install --no-cache-dir -r requirements.txt
           pytest
+  options:
+    logging: CLOUD_LOGGING_ONLY
+    defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+  logsBucket: gs://projet-fil-orange-477313_cloudbuild/logs
   timeout: 1200s
 # To use a custom service account, uncomment and set a valid email below; otherwise the default Cloud Build SA is used.
 # serviceAccount: projects/projet-fil-orange-477313/serviceAccounts/PROJECT_NUMBER@cloudbuild.gserviceaccount.com
