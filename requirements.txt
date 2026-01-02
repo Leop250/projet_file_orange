@@ -4,3 +4,4 @@ matplotlib>=3.8.0
 pandas-gbq>=0.26.1
 google-auth>=2.45.0,<3
 pysqlite3-binary>=0.5.3
+gunicorn>=21.2.0
