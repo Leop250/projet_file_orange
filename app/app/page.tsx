@@ -1,81 +1,232 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { ContextProvider } from '../components/google_map_context';
-import GoogleMapComponent from '../components/google_map_component';
-import { WeatherStation } from '@/types';
+import { useEffect, useState, useMemo } from 'react';
+import GoogleMapComponent from '../components/google_map_component'; 
+import dynamic from 'next/dynamic';
+import { AirQualityData } from '@/types';
 
-export default function Page() {
-  const [stations, setStations] = useState<WeatherStation[]>([]);
+// Import graphique sans SSR
+const AirQualityChart = dynamic(() => import('../components/air_quality_chart_component'), { ssr: false });
+
+// --- UTILITAIRE DE FORMATAGE DE DATE ---
+// Transforme "2024-06" en "Juin 2024" (Français)
+const formatDate = (dateString: string) => {
+  if (!dateString) return "Date inconnue";
+  // On ajoute un jour pour éviter les problèmes de fuseau horaire (le 1er du mois)
+  const date = new Date(`${dateString}-01`); 
+  return new Intl.DateTimeFormat('fr-FR', { month: 'long', year: 'numeric' }).format(date);
+};
+
+// Fonction de groupement
+function groupDataByCity(data: AirQualityData[]) {
+  const groups: Record<string, AirQualityData[]> = {};
+  data.forEach(item => {
+    const cityKey = item.city;
+    if (!groups[cityKey]) groups[cityKey] = [];
+    groups[cityKey].push(item);
+  });
+  return groups;
+}
+
+export default function DashboardPage() {
+  const [allData, setAllData] = useState<Record<string, AirQualityData[]>>({});
+  const [latestStations, setLatestStations] = useState<AirQualityData[]>([]);
+  const [selectedStation, setSelectedStation] = useState<AirQualityData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  // Fetch data from your API endpoint
   useEffect(() => {
-    async function fetchStations() {
+    async function fetchData() {
       try {
-        setLoading(true);
-        const response = await fetch('/api/weather_data');
+        const res = await fetch('/api/weather_data');
+        const data = await res.json();
         
-        if (!response.ok) {
-          throw new Error('Failed to fetch weather data');
+        if (Array.isArray(data)) {
+          const grouped = groupDataByCity(data);
+          setAllData(grouped);
+          const latest = Object.values(grouped).map(group => group[0]);
+          setLatestStations(latest);
+          if (latest.length > 0) setSelectedStation(latest[0]);
+        } else {
+          console.error("Format invalide:", data);
         }
-        
-        const data = await response.json();
-        setStations(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Unknown error occurred');
-        console.error('Error fetching stations:', err);
+      } catch (error) {
+        console.error("Erreur API:", error);
       } finally {
         setLoading(false);
       }
     }
-
-    fetchStations();
+    fetchData();
   }, []);
 
-  // Render loading state
+  const selectedHistory = useMemo(() => {
+    if (!selectedStation) return [];
+    return allData[selectedStation.city] || [];
+  }, [selectedStation, allData]);
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg text-gray-600">Loading weather stations...</div>
-      </div>
-    );
-  }
-
-  // Render error state
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-lg text-red-600">Error: {error}</div>
+      <div className="flex flex-col items-center justify-center h-screen w-screen bg-black text-white">
+        <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+        <div className="mt-4 font-mono text-blue-400 text-sm animate-pulse tracking-widest">
+          INITIALISATION...
+        </div>
       </div>
     );
   }
 
   return (
-    <ContextProvider>
-      <div className="flex flex-col h-screen">
-        {/* Header */}
-        <header className="bg-blue-600 text-white p-4">
-          <h1 className="text-2xl font-bold">Europe Air Quality Map</h1>
-          <p className="text-sm mt-1">Total stations: {stations.length}</p>
-        </header>
-
-        {/* Main content */}
-        <main className="flex-1 flex gap-4 p-4">
-          {/* Sidebar for filters (optional - can add FilterControls here) */}
-          <aside className="w-64 bg-gray-100 p-4 rounded">
-            <h2 className="text-lg font-bold mb-4">Filters</h2>
-            {/* Import FilterControls component here later */}
-            <p className="text-gray-600 text-sm">Filter controls coming soon...</p>
-          </aside>
-
-          {/* Map container */}
-          <section className="flex-1">
-            <GoogleMapComponent stations={stations} />
-          </section>
-        </main>
+    <main className="relative w-screen h-screen bg-black overflow-hidden font-sans text-white">
+      
+      {/* 1. LAYER CARTE */}
+      <div className="absolute inset-0 z-0">
+        <GoogleMapComponent 
+          stations={latestStations} 
+          onStationSelect={setSelectedStation}
+          selectedStation={selectedStation}
+        />
       </div>
-    </ContextProvider>
+
+      {/* 2. SIDEBAR GAUCHE */}
+      <div className="absolute top-4 left-4 bottom-4 w-80 z-10 flex flex-col gap-4 pointer-events-none">
+        <div className="glass-panel p-6 rounded-2xl pointer-events-auto border-l-4 border-blue-500 shadow-2xl">
+          <h1 className="text-xl font-bold tracking-tight text-white">
+            AIR OBSERVATORY
+          </h1>
+          <p className="text-[10px] text-gray-400 uppercase tracking-wider font-mono mt-2">
+            Réseau Hybride • {latestStations.length} Villes
+          </p>
+        </div>
+
+        <div className="glass-panel flex-1 rounded-2xl overflow-hidden flex flex-col pointer-events-auto shadow-2xl">
+          <div className="p-3 border-b border-white/10 bg-white/5 flex justify-between px-4">
+            <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Ville</span>
+            <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">Air (PM2.5)</span>
+          </div>
+          <div className="overflow-y-auto flex-1 no-scrollbar p-2 space-y-1">
+            {latestStations.map((station, idx) => (
+              <div 
+                key={`${station.city}-${idx}`}
+                onClick={() => setSelectedStation(station)}
+                className={`
+                  p-3 rounded-xl cursor-pointer transition-all border flex justify-between items-center group
+                  ${selectedStation?.city === station.city 
+                    ? 'bg-blue-600/20 border-blue-500/50' 
+                    : 'bg-transparent border-transparent hover:bg-white/5'}
+                `}
+              >
+                <div>
+                  <div className="font-bold text-sm text-gray-200">{station.city}</div>
+                  <div className="flex items-center gap-1">
+                    <div className="text-[9px] text-gray-500 uppercase">{station.country}</div>
+                    {station.is_realtime && (
+                      <span className="text-[8px] bg-red-500/20 text-red-300 px-1 rounded ml-1 animate-pulse">LIVE</span>
+                    )}
+                  </div>
+                </div>
+                <div className={`font-mono text-lg font-bold ${station.pm2_5 > 25 ? 'text-red-400' : 'text-teal-400'}`}>
+                  {Math.round(station.pm2_5)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 3. PANNEAU DROIT */}
+      {selectedStation && (
+        <div className="absolute top-4 right-4 bottom-4 z-10 w-96 animate-fade-in pointer-events-auto flex flex-col gap-4">
+          
+          {/* Bloc A : Actuel */}
+          <div className="glass-panel rounded-2xl p-6 border-t-2 border-blue-500 shadow-2xl backdrop-blur-xl shrink-0">
+            <div className="flex justify-between items-start mb-6">
+              <div>
+                <h2 className="text-3xl font-bold text-white">{selectedStation.city}</h2>
+                <div className="flex items-center gap-2 mt-1">
+                   <span className="text-[10px] uppercase tracking-wide text-gray-300 bg-white/10 px-2 py-0.5 rounded">
+                     {selectedStation.weather_description}
+                   </span>
+                </div>
+              </div>
+              <div className="flex flex-col items-end">
+                <div className="text-5xl font-bold tracking-tighter text-white">
+                  {Math.round(selectedStation.temperature_2m)}°
+                </div>
+                <div className="text-[9px] text-gray-400 uppercase">Température</div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <StatBox 
+                label="PM2.5 (Pollution)" 
+                value={Math.round(selectedStation.pm2_5)} 
+                unit="µg/m³" 
+                color={selectedStation.pm2_5 > 25 ? "text-red-400" : "text-green-400"} 
+              />
+              <StatBox label="Vent" value={selectedStation.wind_kph || 0} unit="km/h" color="text-cyan-300" />
+              <StatBox label="Humidité" value={selectedStation.humidity || 0} unit="%" color="text-blue-300" />
+              <StatBox label="Nuages" value={Math.round(selectedStation.cloudcover)} unit="%" color="text-gray-300" />
+            </div>
+          </div>
+
+          {/* Bloc B : Graphique & Historique */}
+          <div className="glass-panel rounded-2xl flex-1 overflow-hidden flex flex-col border-t-2 border-purple-500/50">
+             <div className="p-4 border-b border-white/10 bg-white/5 flex justify-between items-center">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-purple-300">
+                  Historique (24 Mois)
+                </h3>
+             </div>
+             
+             <div className="px-2 pt-2">
+                {/* On passe les données brutes, le graphique peut aussi formatter les dates si on modifie le composant */}
+                <AirQualityChart data={selectedHistory} />
+             </div>
+
+             <div className="overflow-y-auto no-scrollbar p-2 space-y-2 flex-1">
+                {selectedHistory.map((item, idx) => (
+                   <div key={idx} className="flex justify-between items-center p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors border border-transparent hover:border-white/10">
+                      <div className="flex flex-col">
+                         {/* --- C'EST ICI QU'ON APLIQUE LE FORMATAGE --- */}
+                         <span className="font-mono text-xs font-bold text-gray-300 capitalize">
+                            {formatDate(item.month)}
+                         </span>
+                         <span className="text-[8px] text-gray-500 uppercase truncate w-24">
+                           {idx === 0 && item.is_realtime ? "Actuel (Temps Réel)" : "Archive Mensuelle"}
+                         </span>
+                      </div>
+                      
+                      <div className="flex gap-3 text-right">
+                         <div className="w-12">
+                            <div className={`font-bold text-sm ${item.pm2_5 > 25 ? 'text-red-400' : 'text-teal-400'}`}>
+                               {Math.round(item.pm2_5)}
+                            </div>
+                            <div className="text-[8px] text-gray-600">PM2.5</div>
+                         </div>
+                         <div className="w-12">
+                            <div className="font-bold text-sm text-blue-300">
+                               {Math.round(item.temperature_2m)}°
+                            </div>
+                            <div className="text-[8px] text-gray-600">TEMP</div>
+                         </div>
+                      </div>
+                   </div>
+                ))}
+             </div>
+          </div>
+
+        </div>
+      )}
+    </main>
+  );
+}
+
+function StatBox({ label, value, unit, color }: { label: string, value: number, unit: string, color: string }) {
+  return (
+    <div className="bg-white/5 p-2 rounded-lg border border-white/5">
+      <div className="text-[8px] text-gray-400 uppercase font-bold tracking-wider mb-0.5">{label}</div>
+      <div className="flex items-baseline gap-1">
+        <span className={`font-mono text-lg font-bold ${color}`}>{value}</span>
+        <span className="text-[8px] text-gray-500">{unit}</span>
+      </div>
+    </div>
   );
 }

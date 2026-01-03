@@ -1,16 +1,21 @@
-export interface WeatherStation {
+export interface AirQualityData {
+  // Identification
+  city: string;
   country: string;
-  city?: string;
-  location_name?: string;
-  time: string;
-  latitude: string;
-  longitude: string;
-
-  pm25?: string;
-  pm10?: string;
-  nitrogendioxide?: string;
-  ozone?: string;
+  latitude: number;
+  longitude: number;
+  month: string; // "YYYY-MM"
   
-  // Index signature pour permettre l'accès dynamique si nécessaire (optionnel mais utile avec CSV)
-  [key: string]: string | undefined;
+  pm2_5: number;
+  pm10: number;
+  ozone: number;
+  nitrogen_dioxide: number;
+  
+  temperature_2m: number;
+  cloudcover: number;
+  weather_description: string;
+
+  wind_kph?: number;
+  humidity?: number;
+  is_realtime?: boolean;
 }

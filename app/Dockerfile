@@ -1,14 +1,31 @@
-FROM node:20-alpine AS builder 
+# 1. Base
+FROM node:20-alpine AS base
 WORKDIR /app
 
-COPY package.json package-lock.json ./ 
+# 2. Dependencies
+FROM base AS deps
+COPY package.json package-lock.json ./
+# Installe toutes les dépendances définies dans package.json
 RUN npm ci
+
+# 3. Builder
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+RUN npm install recharts
+
+ARG NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+ENV NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=$NEXT_PUBLIC_GOOGLE_MAPS_API_KEY
+
+# Build
 RUN npm run build
 
-### app pour gcp
-FROM node:20-alpine AS runner
+# 4. Runner
+FROM base AS runner
 WORKDIR /app
+ENV NODE_ENV production
 
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs

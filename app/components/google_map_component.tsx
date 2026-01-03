@@ -1,129 +1,87 @@
 'use client';
 
-import { useContext, useEffect, useState } from 'react';
-import { GoogleMap, LoadScript, Marker, InfoWindow } from '@react-google-maps/api';
-import { WeatherContext } from './google_map_context';
+import React, { useState, useCallback } from 'react';
+import { GoogleMap, useJsApiLoader, OverlayView } from '@react-google-maps/api';
+import { AirQualityData } from '@/types';
 
-const containerStyle = {
-  width: '100%',
-  height: '600px'
-};
+const mapStyles = [
+  { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
+];
 
-const center = {
-  lat: 48.8566,   // Centered on Paris (Europe)
-  lng: 2.3522
-};
+const containerStyle = { width: '100%', height: '100vh' };
+const defaultCenter = { lat: 48.8566, lng: 2.3522 };
 
-export default function GoogleMapComponent({ stations }: { stations: any[] }) {
-  const context = useContext(WeatherContext);
-  const [selected, setSelected] = useState<any>(null);
-  const [filteredStations, setFilteredStations] = useState<any[]>([]);
+interface MapProps {
+  stations: AirQualityData[];
+  onStationSelect: (station: AirQualityData) => void;
+  selectedStation: AirQualityData | null;
+}
 
-  // Handle null context
-  if (!context) return <div>Context not available</div>;
+export default function GoogleMapComponent({ stations, onStationSelect, selectedStation }: MapProps) {
+  const { isLoaded, loadError } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""
+  });
 
-  const { filters } = context;
+  const [map, setMap] = useState<google.maps.Map | null>(null);
 
-  // Filter stations based on context filters
-  useEffect(() => {
-    const filtered = stations.filter(station => {
-      // Country filter
-      if (filters.country && station.country !== filters.country) return false;
+  const onLoad = useCallback((map: google.maps.Map) => setMap(map), []);
+  const onUnmount = useCallback(() => setMap(null), []);
 
-      // Date filter
-      if (filters.startDate && station.time < filters.startDate) return false;
-      if (filters.endDate && station.time > filters.endDate) return false;
-
-      // PM2.5 range filter
-      const pm25 = Number(station.pm25);
-      if (pm25 < filters.pm25Range[0] || pm25 > filters.pm25Range[1]) return false;
-
-      // PM10 range filter
-      const pm10 = Number(station.pm10);
-      if (pm10 < filters.pm10Range[0] || pm10 > filters.pm10Range[1]) return false;
-
-      // Nitrogen Dioxide range filter
-      const no2 = Number(station.nitrogendioxide);
-      if (no2 < filters.nitrogendioxideRange[0] || no2 > filters.nitrogendioxideRange[1]) return false;
-
-      // Ozone range filter
-      const ozone = Number(station.ozone);
-      if (ozone < filters.ozoneRange[0] || ozone > filters.ozoneRange[1]) return false;
-
-      return true;
-    });
-
-    setFilteredStations(filtered);
-  }, [stations, filters]);
-
-  // Helper function to determine marker color based on PM2.5 level
-  const getMarkerColor = (pm25: number) => {
-    if (pm25 < 12) return 'http://maps.google.com/mapfiles/ms/icons/green-dot.png';
-    if (pm25 < 35.4) return 'http://maps.google.com/mapfiles/ms/icons/yellow-dot.png';
-    if (pm25 < 55.4) return 'http://maps.google.com/mapfiles/ms/icons/orange-dot.png';
-    return 'http://maps.google.com/mapfiles/ms/icons/red-dot.png';
+  const getPollutionColor = (pm25: number) => {
+    if (pm25 <= 10) return "bg-teal-500 border-teal-300 shadow-[0_0_15px_rgba(20,184,166,0.6)]";
+    if (pm25 <= 25) return "bg-yellow-500 border-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.6)]";
+    if (pm25 <= 50) return "bg-orange-500 border-orange-300 shadow-[0_0_15px_rgba(249,115,22,0.6)]";
+    return "bg-red-600 border-red-400 shadow-[0_0_20px_rgba(220,38,38,0.8)] animate-pulse";
   };
 
+  if (loadError) return <div className="flex items-center justify-center h-full bg-black text-red-500">Erreur Clé API</div>;
+  if (!isLoaded) return <div className="flex items-center justify-center h-full bg-black text-blue-500 animate-pulse">Chargement Carte...</div>;
+
   return (
-    <div className="w-full">
-      <div className="mb-4 text-sm text-gray-600">
-        Showing {filteredStations.length} stations
-      </div>
-
-      <LoadScript googleMapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ''}>
-        <GoogleMap 
-          mapContainerStyle={containerStyle} 
-          center={center} 
-          zoom={5}
-          options={{
-            styles: [
-              {
-                featureType: 'water',
-                elementType: 'geometry',
-                stylers: [{ color: '#e9e9e9' }, { lightness: 17 }]
-              }
-            ]
-          }}
+    <GoogleMap
+      mapContainerStyle={containerStyle}
+      center={defaultCenter}
+      zoom={5}
+      onLoad={onLoad}
+      onUnmount={onUnmount}
+      options={{
+        styles: mapStyles,
+        disableDefaultUI: true,
+        zoomControl: false,
+        minZoom: 3,
+      }}
+    >
+      {Array.isArray(stations) && stations.map((station, index) => (
+        <OverlayView
+          key={`${station.city}-${index}`}
+          position={{ lat: station.latitude, lng: station.longitude }}
+          mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
         >
-          {/* Render markers for each filtered station */}
-          {filteredStations.map((station, index) => (
-            <Marker
-              key={index}
-              position={{
-                lat: parseFloat(station.latitude),
-                lng: parseFloat(station.longitude)
-              }}
-              icon={getMarkerColor(Number(station.pm25))}
-              onClick={() => setSelected(station)}
-              title={`${station.country} - PM2.5: ${station.pm25}`}
-            />
-          ))}
+          <div
+            onClick={() => onStationSelect(station)}
+            title={`PM2.5: ${Math.round(station.pm2_5)} | ${station.is_realtime ? 'LIVE WEATHER' : 'ARCHIVE'}`}
+            className={`
+              cursor-pointer flex items-center justify-center transition-all duration-300
+              w-10 h-10 rounded-full border-2 backdrop-blur-md relative group
+              ${getPollutionColor(station.pm2_5)}
+              ${selectedStation?.city === station.city ? 'scale-125 z-50 ring-4 ring-white/50' : 'hover:scale-110 opacity-90'}
+            `}
+          >
+            {/* Indicateur LIVE (petit point rouge si temps réel) */}
+            {station.is_realtime && (
+               <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white animate-pulse"></span>
+            )}
 
-          {/* Info window shown on marker click */}
-          {selected && (
-            <InfoWindow
-              position={{
-                lat: parseFloat(selected.latitude),
-                lng: parseFloat(selected.longitude)
-              }}
-              onCloseClick={() => setSelected(null)}
-            >
-              <div className="p-3 bg-white rounded shadow">
-                <h3 className="font-bold text-lg mb-2">{selected.country}</h3>
-                <div className="text-sm space-y-1">
-                  <p><strong>Time:</strong> {selected.time}</p>
-                  <p><strong>PM2.5:</strong> {selected.pm25} µg/m³</p>
-                  <p><strong>PM10:</strong> {selected.pm10} µg/m³</p>
-                  <p><strong>NO₂:</strong> {selected.nitrogendioxide} ppb</p>
-                  <p><strong>Ozone:</strong> {selected.ozone} ppb</p>
-                  <p><strong>Lat:</strong> {selected.latitude}</p>
-                  <p><strong>Lng:</strong> {selected.longitude}</p>
-                </div>
-              </div>
-            </InfoWindow>
-          )}
-        </GoogleMap>
-      </LoadScript>
-    </div>
+            <span className="font-bold text-[10px] text-white drop-shadow-md">
+              {Math.round(station.pm2_5)}
+            </span>
+          </div>
+        </OverlayView>
+      ))}
+    </GoogleMap>
   );
 }
