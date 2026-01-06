@@ -68,12 +68,12 @@ export default function GoogleMapComponent({ stations, onStationSelect, selected
   // Tooltip du marqueur
   const getMarkerTooltip = (station: AirQualityData) => {
     return displayMode === 'pollution'
-      ? `PM2.5: ${Math.round(station.pm2_5)} µg/m³ | ${station.city}`
-      : `Temp: ${Math.round(station.temperature_2m)}°C | ${station.city}`;
+      ? `PM2.5 : ${Math.round(station.pm2_5)} µg/m³ | ${station.city}`
+      : `Temp : ${Math.round(station.temperature_2m)}°C | ${station.city}`;
   };
 
-  if (loadError) return <div className="flex items-center justify-center h-full bg-black text-red-500">Erreur Clé API</div>;
-  if (!isLoaded) return <div className="flex items-center justify-center h-full bg-black text-blue-500 animate-pulse">Chargement Carte...</div>;
+  if (loadError) return <div className="flex items-center justify-center h-full bg-black text-red-500">Erreur de clé API</div>;
+  if (!isLoaded) return <div className="flex items-center justify-center h-full bg-black text-blue-500 animate-pulse">Chargement de la carte...</div>;
 
   return (
     <GoogleMap

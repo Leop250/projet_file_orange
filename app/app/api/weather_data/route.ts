@@ -247,9 +247,6 @@ const assembleData = (
     }
   });
 
-  console.log(`Cities found: ${allCities.size}`);
-  console.log(`Weather history countries: ${Object.keys(weatherHistByCountry).length}`);
-
   // Pour chaque ville, générer temps réel + historique
   allCities.forEach((cityInfo, cityKey) => {
     const { city, country, latitude, longitude } = cityInfo;
@@ -269,7 +266,7 @@ const assembleData = (
       month: currentMonth,
       temperature_2m: weatherRT?.temperature ?? 0,
       cloudcover: weatherRT?.clouds ?? 0,
-      weather_description: weatherRT?.weather_description ?? 'N/A',
+      weather_description: weatherRT?.weather_description ?? 'Non disponible',
       wind_kph: weatherRT?.wind_speed ?? 0,
       humidity: weatherRT?.humidity ?? 0,
       ...extractPollution(pollutionRT || null),
@@ -319,7 +316,7 @@ export async function GET() {
 
     if (!projectId) {
       return NextResponse.json(
-        { error: 'Configuration error', message: 'Project ID not found' },
+        { error: 'Erreur de configuration', message: 'ID du projet non trouvé' },
         { status: 500 }
       );
     }
@@ -327,7 +324,7 @@ export async function GET() {
     const bigquery = new BigQuery({ projectId });
     const queries = buildQueries(projectId);
 
-    console.log('Executing BigQuery queries...');
+    console.log('Exécution des requêtes BigQuery...');
 
     const [weatherRealtimeRes, weatherHistoryRes, pollutionHistoryRes, pollutionLatestRes] =
       await Promise.all([
@@ -342,20 +339,14 @@ export async function GET() {
     const pollutionHistoryRows = pollutionHistoryRes[0] as PollutionRow[];
     const pollutionLatestRows = pollutionLatestRes[0] as PollutionRow[];
 
-    console.log(`Data fetched:`);
-    console.log(`  - Weather realtime: ${weatherRealtimeRows.length} cities`);
-    console.log(`  - Weather history: ${weatherHistoryRows.length} records`);
-    console.log(`  - Pollution history: ${pollutionHistoryRows.length} records`);
-    console.log(`  - Pollution latest: ${pollutionLatestRows.length} cities`);
-
     if (weatherHistoryRows.length > 0) {
       const months = [...new Set(weatherHistoryRows.map(r => r.year_month))].sort().reverse();
-      console.log(`Weather history months available: ${months.slice(0, 6).join(', ')}...`);
+      console.log(`Mois disponibles (météo historique) : ${months.slice(0, 6).join(', ')}...`);
     }
 
     if (pollutionLatestRows.length === 0 && weatherRealtimeRows.length === 0) {
       return NextResponse.json(
-        { error: 'No data', message: 'No data available' },
+        { error: 'Aucune donnée', message: 'Aucune donnée disponible' },
         { status: 404 }
       );
     }
@@ -367,10 +358,6 @@ export async function GET() {
       pollutionLatestRows
     );
 
-    console.log(`Final data: ${finalData.length} records`);
-    console.log(`  - Realtime: ${finalData.filter(d => d.is_realtime).length}`);
-    console.log(`  - History: ${finalData.filter(d => !d.is_realtime).length}`);
-
     return NextResponse.json(finalData, {
       headers: {
         'Cache-Control': 'no-store, max-age=0',
@@ -378,18 +365,16 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error('API Error:', error);
-
     if (error instanceof Error) {
       return NextResponse.json(
         {
-          error: 'Server error',
-          message: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred',
+          error: 'Erreur serveur',
+          message: process.env.NODE_ENV === 'development' ? error.message : 'Une erreur est survenue',
         },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ error: 'Unknown error' }, { status: 500 });
+    return NextResponse.json({ error: 'Erreur inconnue' }, { status: 500 });
   }
 }

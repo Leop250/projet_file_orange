@@ -69,6 +69,30 @@ const getTemperatureColor = (value: number): string => {
   return 'text-red-400';
 };
 
+// Configuration des polluants pour l'affichage détaillé
+const POLLUTANT_CONFIG = {
+  pm2_5: { label: 'PM2.5', unit: 'µg/m³', color: 'text-red-400', bgColor: 'bg-red-500/20', icon: '🔴' },
+  pm10: { label: 'PM10', unit: 'µg/m³', color: 'text-orange-400', bgColor: 'bg-orange-500/20', icon: '🟠' },
+  no2: { label: 'NO₂', unit: 'µg/m³', color: 'text-yellow-400', bgColor: 'bg-yellow-500/20', icon: '🟡' },
+  o3: { label: 'O₃', unit: 'µg/m³', color: 'text-green-400', bgColor: 'bg-green-500/20', icon: '🟢' },
+  so2: { label: 'SO₂', unit: 'µg/m³', color: 'text-blue-400', bgColor: 'bg-blue-500/20', icon: '🔵' },
+  co: { label: 'CO', unit: 'µg/m³', color: 'text-purple-400', bgColor: 'bg-purple-500/20', icon: '🟣' },
+  nh3: { label: 'NH₃', unit: 'µg/m³', color: 'text-pink-400', bgColor: 'bg-pink-500/20', icon: '🩷' },
+};
+
+// Information AQI
+const getAQIInfo = (aqi: number | null): { label: string; color: string; bgColor: string } => {
+  if (aqi === null) return { label: 'N/A', color: 'text-gray-400', bgColor: 'bg-gray-500/20' };
+  switch (aqi) {
+    case 1: return { label: 'Bon', color: 'text-green-400', bgColor: 'bg-green-500/20' };
+    case 2: return { label: 'Acceptable', color: 'text-yellow-400', bgColor: 'bg-yellow-500/20' };
+    case 3: return { label: 'Modéré', color: 'text-orange-400', bgColor: 'bg-orange-500/20' };
+    case 4: return { label: 'Mauvais', color: 'text-red-400', bgColor: 'bg-red-500/20' };
+    case 5: return { label: 'Très mauvais', color: 'text-purple-400', bgColor: 'bg-purple-500/20' };
+    default: return { label: 'N/A', color: 'text-gray-400', bgColor: 'bg-gray-500/20' };
+  }
+};
+
 // =============================================================================
 // COMPOSANTS
 // =============================================================================
@@ -89,6 +113,54 @@ function StatBox({ label, value, unit, color }: StatBoxProps) {
       <div className="flex items-baseline gap-1">
         <span className={`font-mono text-lg font-bold ${color}`}>{value}</span>
         <span className="text-[8px] text-gray-500">{unit}</span>
+      </div>
+    </div>
+  );
+}
+
+// Composant pour afficher un polluant individuel
+interface PollutantCardProps {
+  name: keyof typeof POLLUTANT_CONFIG;
+  value: number;
+}
+
+function PollutantCard({ name, value }: PollutantCardProps) {
+  const config = POLLUTANT_CONFIG[name];
+  return (
+    <div className={`${config.bgColor} p-2 rounded-lg border border-white/5 flex items-center justify-between`}>
+      <div className="flex items-center gap-2">
+        <span className="text-sm">{config.icon}</span>
+        <span className="text-[10px] font-bold text-gray-300">{config.label}</span>
+      </div>
+      <div className="flex items-baseline gap-1">
+        <span className={`font-mono text-sm font-bold ${config.color}`}>
+          {value.toFixed(1)}
+        </span>
+        <span className="text-[8px] text-gray-500">{config.unit}</span>
+      </div>
+    </div>
+  );
+}
+
+// Composant AQI Badge
+interface AQIBadgeProps {
+  aqi: number | null;
+}
+
+function AQIBadge({ aqi }: AQIBadgeProps) {
+  const info = getAQIInfo(aqi);
+  return (
+    <div className={`${info.bgColor} p-3 rounded-xl border border-white/10 flex items-center justify-between`}>
+      <div>
+        <div className="text-[9px] text-gray-400 uppercase font-bold tracking-wider">
+          Indice Qualité Air (AQI)
+        </div>
+        <div className={`text-lg font-bold ${info.color}`}>
+          {info.label}
+        </div>
+      </div>
+      <div className={`text-4xl font-bold ${info.color}`}>
+        {aqi ?? '—'}
       </div>
     </div>
   );
@@ -197,7 +269,7 @@ export default function DashboardPage() {
       <div className="absolute top-4 left-4 bottom-4 w-80 z-10 flex flex-col gap-4 pointer-events-none">
         <div className="glass-panel p-6 rounded-2xl pointer-events-auto border-l-4 border-blue-500 shadow-2xl">
           <h1 className="text-xl font-bold tracking-tight text-white">
-            AIR OBSERVATORY
+            OBSERVATOIRE DE L'AIR
           </h1>
           <p className="text-[10px] text-gray-400 uppercase tracking-wider font-mono mt-2">
             Réseau Hybride • {latestStations.length} Villes
@@ -256,7 +328,7 @@ export default function DashboardPage() {
                     <div className="text-[9px] text-gray-500 uppercase">{station.country}</div>
                     {station.is_realtime && (
                       <span className="text-[8px] bg-red-500/20 text-red-300 px-1 rounded ml-1 animate-pulse">
-                        LIVE
+                        EN DIRECT
                       </span>
                     )}
                   </div>
@@ -279,32 +351,34 @@ export default function DashboardPage() {
 
       {/* 3. PANNEAU DROIT - Détails */}
       {selectedStation && (
-        <div className="absolute top-4 right-4 bottom-4 z-10 w-96 animate-fade-in pointer-events-auto flex flex-col gap-4">
-          <div className="glass-panel rounded-2xl p-6 border-t-2 border-blue-500 shadow-2xl backdrop-blur-xl shrink-0">
-            <div className="flex justify-between items-start mb-6">
+        <div className="absolute top-4 right-4 bottom-4 z-10 w-[420px] animate-fade-in pointer-events-auto flex flex-col gap-3 overflow-hidden">
+          
+          {/* Bloc A : Header avec météo */}
+          <div className="glass-panel rounded-2xl p-5 border-t-2 border-blue-500 shadow-2xl backdrop-blur-xl shrink-0">
+            <div className="flex justify-between items-start mb-4">
               <div>
-                <h2 className="text-3xl font-bold text-white">{selectedStation.city}</h2>
+                <h2 className="text-2xl font-bold text-white">{selectedStation.city}</h2>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-[10px] uppercase tracking-wide text-gray-300 bg-white/10 px-2 py-0.5 rounded">
                     {selectedStation.weather_description}
                   </span>
+                  {selectedStation.is_realtime && (
+                    <span className="text-[8px] bg-red-500/30 text-red-300 px-2 py-0.5 rounded animate-pulse">
+                      🔴 EN DIRECT
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="flex flex-col items-end">
-                <div className="text-5xl font-bold tracking-tighter text-white">
+                <div className="text-4xl font-bold tracking-tighter text-white">
                   {Math.round(selectedStation.temperature_2m)}°
                 </div>
                 <div className="text-[9px] text-gray-400 uppercase">Température</div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <StatBox
-                label="PM2.5 (Pollution)"
-                value={Math.round(selectedStation.pm2_5)}
-                unit="µg/m³"
-                color={getPM25Color(selectedStation.pm2_5)}
-              />
+            {/* Météo compacte */}
+            <div className="grid grid-cols-3 gap-2">
               <StatBox
                 label="Vent"
                 value={selectedStation.wind_kph || 0}
@@ -326,21 +400,45 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="glass-panel rounded-2xl flex-1 overflow-hidden flex flex-col border-t-2 border-purple-500/50">
-            <div className="p-4 border-b border-white/10 bg-white/5 flex justify-between items-center">
+          {/* Bloc B : Qualité de l'air détaillée */}
+          <div className="glass-panel rounded-2xl p-4 border-t-2 border-red-500/50 shadow-2xl backdrop-blur-xl shrink-0">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-red-300 mb-3">
+              🌫️ Qualité de l'Air
+            </h3>
+            
+            {/* AQI Badge */}
+            <AQIBadge aqi={selectedStation.aqi} />
+            
+            {/* Grille des polluants */}
+            <div className="grid grid-cols-2 gap-2 mt-3">
+              <PollutantCard name="pm2_5" value={selectedStation.pm2_5} />
+              <PollutantCard name="pm10" value={selectedStation.pm10} />
+              <PollutantCard name="no2" value={selectedStation.no2} />
+              <PollutantCard name="o3" value={selectedStation.o3} />
+              <PollutantCard name="so2" value={selectedStation.so2} />
+              <PollutantCard name="co" value={selectedStation.co} />
+              <div className="col-span-2">
+                <PollutantCard name="nh3" value={selectedStation.nh3} />
+              </div>
+            </div>
+          </div>
+
+          {/* Bloc C : Graphique & Historique */}
+          <div className="glass-panel rounded-2xl flex-1 overflow-hidden flex flex-col border-t-2 border-purple-500/50 min-h-0">
+            <div className="p-3 border-b border-white/10 bg-white/5 flex justify-between items-center shrink-0">
               <h3 className="text-xs font-bold uppercase tracking-widest text-purple-300">
-                Historique (24 Mois)
+                📊 Historique
               </h3>
               <span className="text-[9px] text-gray-500">
                 {selectedHistory.length} entrées
               </span>
             </div>
 
-            <div className="px-2 pt-2">
+            <div className="px-2 pt-2 shrink-0">
               <AirQualityChart data={selectedHistory} />
             </div>
 
-            <div className="overflow-y-auto no-scrollbar p-2 space-y-2 flex-1">
+            <div className="overflow-y-auto no-scrollbar p-2 space-y-2 flex-1 min-h-0">
               {selectedHistory.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-gray-500 text-sm">
                   Aucun historique disponible
