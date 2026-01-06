@@ -16,31 +16,44 @@ interface ChartProps {
   data: AirQualityData[];
 }
 
-// Helper format court pour le graph (ex: "Juin")
 const formatMonthShort = (dateString: string) => {
   if (!dateString) return "";
   const date = new Date(`${dateString}-01`);
-  // Affiche "juin" ou "janv."
   return new Intl.DateTimeFormat('fr-FR', { month: 'short', year: '2-digit' }).format(date);
 };
 
 export default function AirQualityChart({ data }: ChartProps) {
+  // Ne rien afficher si pas de données
   if (!data || data.length === 0) {
     return (
-      <div className="flex items-center justify-center h-full w-full text-xs text-gray-500 font-mono">
-        Pas d'historique
+      <div className="flex items-center justify-center h-48 w-full text-xs text-gray-500 font-mono">
+        Pas d'historique disponible
       </div>
     );
   }
 
-  const chartData = [...data].reverse().map(item => ({
-    month: item.month,
-    pm25: Math.round(item.pm2_5 || 0),
-    temp: Math.round(item.temperature_2m || 0)
-  }));
+  // Préparer les données pour le graphique (ordre chronologique)
+  const chartData = [...data]
+    .filter(item => !item.is_realtime) // Exclure temps réel pour le graphique historique
+    .sort((a, b) => a.month.localeCompare(b.month)) // Ordre chronologique
+    .slice(-24) // Garder les 24 derniers mois
+    .map(item => ({
+      month: item.month,
+      pm25: Math.round(item.pm2_5 || 0),
+      temp: Math.round(item.temperature_2m || 0)
+    }));
+
+  // Si pas assez de données historiques
+  if (chartData.length < 2) {
+    return (
+      <div className="flex items-center justify-center h-48 w-full text-xs text-gray-500 font-mono">
+        Données historiques insuffisantes
+      </div>
+    );
+  }
 
   return (
-    <div className="w-full h-48 mt-4 select-none">
+    <div style={{ width: '100%', height: 192, minHeight: 192 }}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
           data={chartData}
@@ -62,7 +75,6 @@ export default function AirQualityChart({ data }: ChartProps) {
           <XAxis 
             dataKey="month" 
             tick={{ fill: '#6b7280', fontSize: 9, fontFamily: 'monospace' }} 
-            // Utilisation du formateur court
             tickFormatter={formatMonthShort} 
             interval="preserveStartEnd"
             axisLine={false}
@@ -84,10 +96,15 @@ export default function AirQualityChart({ data }: ChartProps) {
               borderRadius: '8px',
               fontSize: '11px'
             }}
-            // Formatage de la date dans le tooltip (ex: Juin 2024)
-            labelFormatter={(label) => new Date(`${label}-01`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' })}
+            labelFormatter={(label) => {
+              try {
+                return new Date(`${label}-01`).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+              } catch {
+                return label;
+              }
+            }}
             formatter={(value: number | undefined, name: string | undefined) => [
-              value, 
+              value ?? 0, 
               name === 'pm25' ? 'PM2.5 (µg/m³)' : 'Température (°C)'
             ]}
           />

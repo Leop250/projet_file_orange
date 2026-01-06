@@ -1,270 +1,395 @@
 import { NextResponse } from 'next/server';
 import { BigQuery } from '@google-cloud/bigquery';
 import { GoogleAuth } from 'google-auth-library';
+import {
+  AirQualityData,
+  PollutionData,
+  DEFAULT_POLLUTION,
+} from '@/types';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
-  const auth = new GoogleAuth();
-  const projectId = await auth.getProjectId();
+// =============================================================================
+// TYPES INTERNES (spécifiques aux requêtes BigQuery)
+// =============================================================================
 
-  if (!projectId) {
-    return NextResponse.json(
-      { error: 'Projet ID manquant' },
-      { status: 500 }
-    );
-  }
+interface WeatherRealtimeRow {
+  city: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  temperature: number | null;
+  weather_description: string | null;
+  wind_speed: number | null;
+  humidity: number | null;
+  clouds: number | null;
+}
 
-  try {
-    const bigquery = new BigQuery({ projectId });
+interface WeatherHistoryRow {
+  country: string;
+  year_month: string;
+  temperature_2m: number | null;
+  cloudcover: number | null;
+  weather_description: string | null;
+}
 
-    // --- REQUÊTE 1 : HISTORIQUE MÉTÉO (Pays) ---
-    const queryWeatherHist = `
-      SELECT
-        country,
-        month,
-        AVG(temperature_2m) AS temperature_2m,
-        AVG(cloudcover) AS cloudcover,
-        ANY_VALUE(weather_description_mode) AS weather_description
-      FROM \`${projectId}.weather_data.weather_monthly_avg\`
-      WHERE PARSE_DATE('%Y-%m', month) >= DATE_SUB(CURRENT_DATE(), INTERVAL 24 MONTH)
-      GROUP BY country, month
-    `;
+interface PollutionRow {
+  city: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+  year_month: string;
+  pm2_5: number | null;
+  pm10: number | null;
+  no2: number | null;
+  o3: number | null;
+  so2: number | null;
+  co: number | null;
+  nh3: number | null;
+  aqi: number | null;
+}
 
-    // --- REQUÊTE 2 : MÉTÉO TEMPS RÉEL (Villes) ---
-    const queryWeatherRealtime = `
-      SELECT
-        city_name AS city,
-        country,
-        latitude,
-        longitude,
-        temperature AS temperature_2m,
-        weather_description,
-        wind_speed AS wind_kph,
-        humidity,
-        clouds AS cloudcover,
-        timestamp
-      FROM \`${projectId}.weather_data.weather_records\`
-      QUALIFY ROW_NUMBER() OVER (PARTITION BY city_name ORDER BY timestamp DESC) = 1
-    `;
+interface CityInfo {
+  city: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+}
 
-    // --- REQUÊTE 3 : POLLUTION (Historique + Temps réel, par ville) ---
-    // 🔧 Correction ici : on compare sur DATE(measurement_timestamp)
-    const queryPollutionFull = `
-      SELECT
+// =============================================================================
+// CONSTANTES
+// =============================================================================
+
+// Mapping codes ISO → noms complets (pour matcher weather_monthly_avg)
+const COUNTRY_CODE_TO_NAME: Record<string, string> = {
+  'al': 'albania', 'ad': 'andorra', 'at': 'austria', 'be': 'belgium',
+  'ba': 'bosnia and herzegovina', 'bg': 'bulgaria', 'hr': 'croatia',
+  'cy': 'cyprus', 'cz': 'czech republic', 'dk': 'denmark', 'ee': 'estonia',
+  'fi': 'finland', 'fr': 'france', 'de': 'germany', 'gr': 'greece',
+  'hu': 'hungary', 'is': 'iceland', 'ie': 'ireland', 'it': 'italy',
+  'lv': 'latvia', 'li': 'liechtenstein', 'lt': 'lithuania', 'lu': 'luxembourg',
+  'mt': 'malta', 'md': 'moldova', 'mc': 'monaco', 'me': 'montenegro',
+  'nl': 'netherlands', 'mk': 'north macedonia', 'no': 'norway', 'pl': 'poland',
+  'pt': 'portugal', 'ro': 'romania', 'ru': 'russia', 'sm': 'san marino',
+  'rs': 'serbia', 'sk': 'slovakia', 'si': 'slovenia', 'es': 'spain',
+  'se': 'sweden', 'ch': 'switzerland', 'ua': 'ukraine',
+  'gb': 'united kingdom', 'uk': 'united kingdom', 'va': 'vatican city',
+};
+
+// =============================================================================
+// HELPERS
+// =============================================================================
+
+const normalize = (str: string | null | undefined): string =>
+  (str ?? 'unknown').toLowerCase().trim();
+
+const normalizeCountryForWeather = (country: string): string => {
+  const normalized = normalize(country);
+  return COUNTRY_CODE_TO_NAME[normalized] || normalized;
+};
+
+const getCityKey = (city: string, country: string): string =>
+  `${normalize(city)}|${normalize(country)}`;
+
+const extractPollution = (row: PollutionRow | null): PollutionData => {
+  if (!row) return { ...DEFAULT_POLLUTION };
+  return {
+    pm2_5: row.pm2_5 ?? 0,
+    pm10: row.pm10 ?? 0,
+    no2: row.no2 ?? 0,
+    o3: row.o3 ?? 0,
+    so2: row.so2 ?? 0,
+    co: row.co ?? 0,
+    nh3: row.nh3 ?? 0,
+    aqi: row.aqi ?? null,
+  };
+};
+
+// =============================================================================
+// QUERIES
+// =============================================================================
+
+const buildQueries = (projectId: string) => ({
+  // 1. Météo temps réel par ville
+  weatherRealtime: `
+    SELECT
+      city_name AS city,
+      country,
+      latitude,
+      longitude,
+      temperature,
+      weather_description,
+      wind_speed,
+      humidity,
+      clouds
+    FROM \`${projectId}.weather_data.weather_records\`
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY city_name ORDER BY timestamp DESC) = 1
+  `,
+
+  // 2. Historique météo par pays (SOURCE PRINCIPALE pour l'historique)
+  weatherHistory: `
+    SELECT
+      country,
+      month AS year_month,
+      AVG(temperature_2m) AS temperature_2m,
+      AVG(cloudcover) AS cloudcover,
+      ANY_VALUE(weather_description_mode) AS weather_description
+    FROM \`${projectId}.weather_data.weather_monthly_avg\`
+    GROUP BY country, month
+    ORDER BY country, month DESC
+  `,
+
+  // 3. Pollution agrégée par ville/mois (pour enrichir quand disponible)
+  pollutionHistory: `
+    SELECT
+      city,
+      country,
+      ANY_VALUE(latitude) AS latitude,
+      ANY_VALUE(longitude) AS longitude,
+      FORMAT_TIMESTAMP('%Y-%m', measurement_timestamp) AS year_month,
+      AVG(pm2_5) AS pm2_5,
+      AVG(pm10) AS pm10,
+      AVG(no2) AS no2,
+      AVG(o3) AS o3,
+      AVG(so2) AS so2,
+      AVG(co) AS co,
+      AVG(nh3) AS nh3,
+      CAST(ROUND(AVG(aqi)) AS INT64) AS aqi
+    FROM \`${projectId}.airquality_full.measurements_complette\`
+    GROUP BY city, country, FORMAT_TIMESTAMP('%Y-%m', measurement_timestamp)
+  `,
+
+  // 4. Pollution temps réel (dernière mesure par ville)
+  pollutionLatest: `
+    SELECT
+      city,
+      country,
+      latitude,
+      longitude,
+      pm2_5,
+      pm10,
+      no2,
+      o3,
+      so2,
+      co,
+      nh3,
+      aqi
+    FROM \`${projectId}.airquality_full.measurements_complette\`
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY city ORDER BY measurement_timestamp DESC) = 1
+  `,
+});
+
+// =============================================================================
+// DATA ASSEMBLY
+// =============================================================================
+
+const assembleData = (
+  weatherRealtime: WeatherRealtimeRow[],
+  weatherHistory: WeatherHistoryRow[],
+  pollutionHistory: PollutionRow[],
+  pollutionLatest: PollutionRow[]
+): AirQualityData[] => {
+  const finalData: AirQualityData[] = [];
+  const currentMonth = new Date().toISOString().slice(0, 7);
+
+  // Index météo historique par pays (normalisé)
+  const weatherHistByCountry: Record<string, Record<string, WeatherHistoryRow>> = {};
+  weatherHistory.forEach(row => {
+    const countryKey = normalize(row.country);
+    if (!weatherHistByCountry[countryKey]) weatherHistByCountry[countryKey] = {};
+    weatherHistByCountry[countryKey][row.year_month] = row;
+  });
+
+  // Index pollution par ville+mois
+  const pollutionByCity: Record<string, Record<string, PollutionRow>> = {};
+  pollutionHistory.forEach(row => {
+    const cityKey = getCityKey(row.city, row.country);
+    if (!pollutionByCity[cityKey]) pollutionByCity[cityKey] = {};
+    pollutionByCity[cityKey][row.year_month] = row;
+  });
+
+  // Index pollution temps réel par ville
+  const pollutionLatestByCity: Record<string, PollutionRow> = {};
+  pollutionLatest.forEach(row => {
+    pollutionLatestByCity[getCityKey(row.city, row.country)] = row;
+  });
+
+  // Index météo temps réel par ville
+  const weatherRealtimeByCity: Record<string, WeatherRealtimeRow> = {};
+  weatherRealtime.forEach(row => {
+    weatherRealtimeByCity[getCityKey(row.city, row.country)] = row;
+  });
+
+  // Collecter toutes les villes uniques
+  const allCities = new Map<string, CityInfo>();
+
+  pollutionLatest.forEach(row => {
+    const key = getCityKey(row.city, row.country);
+    if (!allCities.has(key)) {
+      allCities.set(key, {
+        city: row.city,
+        country: row.country,
+        latitude: row.latitude,
+        longitude: row.longitude,
+      });
+    }
+  });
+
+  weatherRealtime.forEach(row => {
+    const key = getCityKey(row.city, row.country);
+    if (!allCities.has(key)) {
+      allCities.set(key, {
+        city: row.city,
+        country: row.country,
+        latitude: row.latitude,
+        longitude: row.longitude,
+      });
+    }
+  });
+
+  console.log(`Cities found: ${allCities.size}`);
+  console.log(`Weather history countries: ${Object.keys(weatherHistByCountry).length}`);
+
+  // Pour chaque ville, générer temps réel + historique
+  allCities.forEach((cityInfo, cityKey) => {
+    const { city, country, latitude, longitude } = cityInfo;
+    const countryKeyForWeather = normalizeCountryForWeather(country);
+
+    const weatherRT = weatherRealtimeByCity[cityKey];
+    const pollutionRT = pollutionLatestByCity[cityKey];
+    const cityPollutionHist = pollutionByCity[cityKey] || {};
+    const countryWeatherHist = weatherHistByCountry[countryKeyForWeather] || {};
+
+    // 1. TEMPS RÉEL
+    finalData.push({
+      city,
+      country,
+      latitude,
+      longitude,
+      month: currentMonth,
+      temperature_2m: weatherRT?.temperature ?? 0,
+      cloudcover: weatherRT?.clouds ?? 0,
+      weather_description: weatherRT?.weather_description ?? 'N/A',
+      wind_kph: weatherRT?.wind_speed ?? 0,
+      humidity: weatherRT?.humidity ?? 0,
+      ...extractPollution(pollutionRT || null),
+      is_realtime: true,
+    });
+
+    // 2. HISTORIQUE (basé sur weather_monthly_avg du pays)
+    Object.entries(countryWeatherHist).forEach(([yearMonth, weatherHist]) => {
+      if (yearMonth === currentMonth) return;
+
+      const pollutionForMonth = cityPollutionHist[yearMonth] || null;
+
+      finalData.push({
         city,
         country,
         latitude,
         longitude,
-        FORMAT_TIMESTAMP('%Y-%m', measurement_timestamp) AS month,
-        measurement_timestamp,
-        pm2_5,
-        pm10,
-        no2,
-        o3,
-        so2,
-        co,
-        nh3,
-        aqi
-      FROM \`${projectId}.airquality_full.measurements_complette\`
-      WHERE DATE(measurement_timestamp) >= DATE_SUB(CURRENT_DATE(), INTERVAL 24 MONTH)
-    `;
-
-    // ⚡ Exécution en parallèle
-    const [weatherHistRes, weatherRealtimeRes, pollutionFullRes] = await Promise.all([
-      bigquery.query(queryWeatherHist),
-      bigquery.query(queryWeatherRealtime),
-      bigquery.query(queryPollutionFull),
-    ]);
-
-    const weatherHistRows = weatherHistRes[0];
-    const weatherRealtimeRows = weatherRealtimeRes[0];
-    const pollutionRows = pollutionFullRes[0];
-
-    // --- 1. Historique météo par pays
-    const countryWeatherHistMap: Record<string, Record<string, any>> = {};
-
-    weatherHistRows.forEach((row: any) => {
-      const c = row.country ? row.country.toLowerCase() : 'unknown';
-      if (!countryWeatherHistMap[c]) countryWeatherHistMap[c] = {};
-      if (!countryWeatherHistMap[c][row.month]) {
-        countryWeatherHistMap[c][row.month] = { month: row.month };
-      }
-
-      Object.assign(countryWeatherHistMap[c][row.month], {
-        temperature_2m: row.temperature_2m,
-        cloudcover: row.cloudcover,
-        weather_description: row.weather_description,
+        month: yearMonth,
+        temperature_2m: weatherHist.temperature_2m ?? 0,
+        cloudcover: weatherHist.cloudcover ?? 0,
+        weather_description: weatherHist.weather_description ?? 'Archive',
+        wind_kph: 0,
+        humidity: 0,
+        ...extractPollution(pollutionForMonth),
+        is_realtime: false,
       });
     });
+  });
 
-    // --- 2. Historique + temps réel pollution par ville ET pays
-    const cityPollutionHistMap: Record<string, Record<string, any[]>> = {};
-    const cityLatestPollutionMap: Record<string, any> = {};
+  // Tri: par ville, puis temps réel en premier, puis par mois décroissant
+  return finalData.sort((a, b) => {
+    if (a.city !== b.city) return a.city.localeCompare(b.city);
+    if (a.is_realtime && !b.is_realtime) return -1;
+    if (!a.is_realtime && b.is_realtime) return 1;
+    return b.month.localeCompare(a.month);
+  });
+};
 
-    pollutionRows.forEach((row: any) => {
-      const city = row.city ? row.city.toLowerCase() : 'unknown';
-      const country = row.country ? row.country.toLowerCase() : 'unknown';
-      const key = `${city}|${country}`;
+// =============================================================================
+// MAIN HANDLER
+// =============================================================================
 
-      // Historique par ville
-      if (!cityPollutionHistMap[key]) cityPollutionHistMap[key] = {};
-      if (!cityPollutionHistMap[key][row.month]) cityPollutionHistMap[key][row.month] = [];
-      cityPollutionHistMap[key][row.month].push(row);
+export async function GET() {
+  try {
+    const auth = new GoogleAuth();
+    const projectId = await auth.getProjectId();
 
-      // Temps réel : on garde la mesure la plus récente
-      const currentLatest = cityLatestPollutionMap[key];
-      if (
-        !currentLatest ||
-        new Date(row.measurement_timestamp).getTime() >
-          new Date(currentLatest.measurement_timestamp).getTime()
-      ) {
-        cityLatestPollutionMap[key] = row;
-      }
-    });
+    if (!projectId) {
+      return NextResponse.json(
+        { error: 'Configuration error', message: 'Project ID not found' },
+        { status: 500 }
+      );
+    }
 
-    // --- 3. Assemblage final
-    const finalData: any[] = [];
-    const currentMonthPrefix = new Date().toISOString().slice(0, 7);
+    const bigquery = new BigQuery({ projectId });
+    const queries = buildQueries(projectId);
 
-    weatherRealtimeRows.forEach((weatherRow: any) => {
-      const city = weatherRow.city ? weatherRow.city.toLowerCase() : '';
-      const country = weatherRow.country ? weatherRow.country.toLowerCase() : '';
-      const cityCountryKey = `${city}|${country}`;
+    console.log('Executing BigQuery queries...');
 
-      // Pollution temps réel pour cette ville
-      const latestPoll = cityLatestPollutionMap[cityCountryKey];
-      const realtimePoll = latestPoll
-        ? {
-            pm2_5: latestPoll.pm2_5 ?? 0,
-            pm10: latestPoll.pm10 ?? 0,
-            no2: latestPoll.no2 ?? 0,
-            o3: latestPoll.o3 ?? 0,
-            so2: latestPoll.so2 ?? 0,
-            co: latestPoll.co ?? 0,
-            nh3: latestPoll.nh3 ?? 0,
-            aqi: latestPoll.aqi ?? null,
-          }
-        : {
-            pm2_5: 0,
-            pm10: 0,
-            no2: 0,
-            o3: 0,
-            so2: 0,
-            co: 0,
-            nh3: 0,
-            aqi: null,
-          };
+    const [weatherRealtimeRes, weatherHistoryRes, pollutionHistoryRes, pollutionLatestRes] =
+      await Promise.all([
+        bigquery.query(queries.weatherRealtime),
+        bigquery.query(queries.weatherHistory),
+        bigquery.query(queries.pollutionHistory),
+        bigquery.query(queries.pollutionLatest),
+      ]);
 
-      // Donnée temps réel fusionnée
-      finalData.push({
-        city: weatherRow.city,
-        country: weatherRow.country,
-        latitude: weatherRow.latitude,
-        longitude: weatherRow.longitude,
-        month: currentMonthPrefix,
-        temperature_2m: weatherRow.temperature_2m,
-        cloudcover: weatherRow.cloudcover,
-        weather_description: weatherRow.weather_description,
-        wind_kph: weatherRow.wind_kph,
-        humidity: weatherRow.humidity,
-        ...realtimePoll,
-        is_realtime: true,
-      });
+    const weatherRealtimeRows = weatherRealtimeRes[0] as WeatherRealtimeRow[];
+    const weatherHistoryRows = weatherHistoryRes[0] as WeatherHistoryRow[];
+    const pollutionHistoryRows = pollutionHistoryRes[0] as PollutionRow[];
+    const pollutionLatestRows = pollutionLatestRes[0] as PollutionRow[];
 
-      // Historique météo par pays
-      const countryHistMonths = countryWeatherHistMap[country]
-        ? Object.values(countryWeatherHistMap[country])
-        : [];
+    console.log(`Data fetched:`);
+    console.log(`  - Weather realtime: ${weatherRealtimeRows.length} cities`);
+    console.log(`  - Weather history: ${weatherHistoryRows.length} records`);
+    console.log(`  - Pollution history: ${pollutionHistoryRows.length} records`);
+    console.log(`  - Pollution latest: ${pollutionLatestRows.length} cities`);
 
-      // Historique pollution par ville
-      const cityPollByMonth = cityPollutionHistMap[cityCountryKey] || {};
+    if (weatherHistoryRows.length > 0) {
+      const months = [...new Set(weatherHistoryRows.map(r => r.year_month))].sort().reverse();
+      console.log(`Weather history months available: ${months.slice(0, 6).join(', ')}...`);
+    }
 
-      // Génération des archives
-      countryHistMonths.forEach((histWeather: any) => {
-        const month = histWeather.month;
-        if (month === currentMonthPrefix) return;
+    if (pollutionLatestRows.length === 0 && weatherRealtimeRows.length === 0) {
+      return NextResponse.json(
+        { error: 'No data', message: 'No data available' },
+        { status: 404 }
+      );
+    }
 
-        const cityMonthPollArray = cityPollByMonth[month] || [];
+    const finalData = assembleData(
+      weatherRealtimeRows,
+      weatherHistoryRows,
+      pollutionHistoryRows,
+      pollutionLatestRows
+    );
 
-        let aggPoll = {
-          pm2_5: 0,
-          pm10: 0,
-          no2: 0,
-          o3: 0,
-          so2: 0,
-          co: 0,
-          nh3: 0,
-          aqi: null as number | null,
-        };
-
-        if (cityMonthPollArray.length > 0) {
-          const n = cityMonthPollArray.length;
-          const sum = cityMonthPollArray.reduce(
-            (acc: any, r: any) => {
-              acc.pm2_5 += r.pm2_5 ?? 0;
-              acc.pm10 += r.pm10 ?? 0;
-              acc.no2 += r.no2 ?? 0;
-              acc.o3 += r.o3 ?? 0;
-              acc.so2 += r.so2 ?? 0;
-              acc.co += r.co ?? 0;
-              acc.nh3 += r.nh3 ?? 0;
-              if (r.aqi != null) {
-                acc.aqiSum += r.aqi;
-                acc.aqiCount += 1;
-              }
-              return acc;
-            },
-            {
-              pm2_5: 0,
-              pm10: 0,
-              no2: 0,
-              o3: 0,
-              so2: 0,
-              co: 0,
-              nh3: 0,
-              aqiSum: 0,
-              aqiCount: 0,
-            }
-          );
-
-          aggPoll = {
-            pm2_5: sum.pm2_5 / n,
-            pm10: sum.pm10 / n,
-            no2: sum.no2 / n,
-            o3: sum.o3 / n,
-            so2: sum.so2 / n,
-            co: sum.co / n,
-            nh3: sum.nh3 / n,
-            aqi: sum.aqiCount > 0 ? Math.round(sum.aqiSum / sum.aqiCount) : null,
-          };
-        }
-
-        finalData.push({
-          city: weatherRow.city,
-          country: weatherRow.country,
-          latitude: weatherRow.latitude,
-          longitude: weatherRow.longitude,
-          month,
-          temperature_2m: histWeather.temperature_2m ?? 0,
-          cloudcover: histWeather.cloudcover ?? 0,
-          weather_description: histWeather.weather_description ?? 'Archive',
-          wind_kph: 0,
-          humidity: 0,
-          ...aggPoll,
-          is_realtime: false,
-        });
-      });
-    });
+    console.log(`Final data: ${finalData.length} records`);
+    console.log(`  - Realtime: ${finalData.filter(d => d.is_realtime).length}`);
+    console.log(`  - History: ${finalData.filter(d => !d.is_realtime).length}`);
 
     return NextResponse.json(finalData, {
-      headers: { 'Cache-Control': 'no-store, max-age=0' },
+      headers: {
+        'Cache-Control': 'no-store, max-age=0',
+        'X-Total-Count': String(finalData.length),
+      },
     });
-  } catch (error: any) {
-    console.error('ERREUR API:', error);
-    return NextResponse.json(
-      { error: error.message, details: 'Erreur fusion finale' },
-      { status: 500 }
-    );
+  } catch (error) {
+    console.error('API Error:', error);
+
+    if (error instanceof Error) {
+      return NextResponse.json(
+        {
+          error: 'Server error',
+          message: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred',
+        },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ error: 'Unknown error' }, { status: 500 });
   }
 }
