@@ -14,13 +14,16 @@ const mapStyles = [
 const containerStyle = { width: '100%', height: '100vh' };
 const defaultCenter = { lat: 48.8566, lng: 2.3522 };
 
+type DisplayMode = 'pollution' | 'temperature';
+
 interface MapProps {
   stations: AirQualityData[];
   onStationSelect: (station: AirQualityData) => void;
   selectedStation: AirQualityData | null;
+  displayMode: DisplayMode;
 }
 
-export default function GoogleMapComponent({ stations, onStationSelect, selectedStation }: MapProps) {
+export default function GoogleMapComponent({ stations, onStationSelect, selectedStation, displayMode }: MapProps) {
   const { isLoaded, loadError } = useJsApiLoader({
     id: 'google-map-script',
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""
@@ -31,11 +34,42 @@ export default function GoogleMapComponent({ stations, onStationSelect, selected
   const onLoad = useCallback((map: google.maps.Map) => setMap(map), []);
   const onUnmount = useCallback(() => setMap(null), []);
 
+  // Couleurs pour la pollution (PM2.5)
   const getPollutionColor = (pm25: number) => {
     if (pm25 <= 10) return "bg-teal-500 border-teal-300 shadow-[0_0_15px_rgba(20,184,166,0.6)]";
     if (pm25 <= 25) return "bg-yellow-500 border-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.6)]";
     if (pm25 <= 50) return "bg-orange-500 border-orange-300 shadow-[0_0_15px_rgba(249,115,22,0.6)]";
     return "bg-red-600 border-red-400 shadow-[0_0_20px_rgba(220,38,38,0.8)] animate-pulse";
+  };
+
+  // Couleurs pour la température
+  const getTemperatureColor = (temp: number) => {
+    if (temp <= 0) return "bg-cyan-500 border-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.6)]";
+    if (temp <= 10) return "bg-blue-500 border-blue-300 shadow-[0_0_15px_rgba(59,130,246,0.6)]";
+    if (temp <= 20) return "bg-green-500 border-green-300 shadow-[0_0_15px_rgba(34,197,94,0.6)]";
+    if (temp <= 30) return "bg-yellow-500 border-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.6)]";
+    return "bg-red-600 border-red-400 shadow-[0_0_20px_rgba(220,38,38,0.8)]";
+  };
+
+  // Sélectionner la couleur selon le mode
+  const getMarkerColor = (station: AirQualityData) => {
+    return displayMode === 'pollution' 
+      ? getPollutionColor(station.pm2_5)
+      : getTemperatureColor(station.temperature_2m);
+  };
+
+  // Valeur affichée sur le marqueur
+  const getMarkerValue = (station: AirQualityData) => {
+    return displayMode === 'pollution'
+      ? Math.round(station.pm2_5)
+      : `${Math.round(station.temperature_2m)}°`;
+  };
+
+  // Tooltip du marqueur
+  const getMarkerTooltip = (station: AirQualityData) => {
+    return displayMode === 'pollution'
+      ? `PM2.5: ${Math.round(station.pm2_5)} µg/m³ | ${station.city}`
+      : `Temp: ${Math.round(station.temperature_2m)}°C | ${station.city}`;
   };
 
   if (loadError) return <div className="flex items-center justify-center h-full bg-black text-red-500">Erreur Clé API</div>;
@@ -63,11 +97,11 @@ export default function GoogleMapComponent({ stations, onStationSelect, selected
         >
           <div
             onClick={() => onStationSelect(station)}
-            title={`PM2.5: ${Math.round(station.pm2_5)} | ${station.is_realtime ? 'LIVE WEATHER' : 'ARCHIVE'}`}
+            title={getMarkerTooltip(station)}
             className={`
               cursor-pointer flex items-center justify-center transition-all duration-300
               w-10 h-10 rounded-full border-2 backdrop-blur-md relative group
-              ${getPollutionColor(station.pm2_5)}
+              ${getMarkerColor(station)}
               ${selectedStation?.city === station.city ? 'scale-125 z-50 ring-4 ring-white/50' : 'hover:scale-110 opacity-90'}
             `}
           >
@@ -77,7 +111,7 @@ export default function GoogleMapComponent({ stations, onStationSelect, selected
             )}
 
             <span className="font-bold text-[10px] text-white drop-shadow-md">
-              {Math.round(station.pm2_5)}
+              {getMarkerValue(station)}
             </span>
           </div>
         </OverlayView>

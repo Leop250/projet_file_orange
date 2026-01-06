@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import GoogleMapComponent from '../components/google_map_component';
-import { AirQualityData, GroupedAirQualityData, PM25_THRESHOLDS } from '@/types';
+import { AirQualityData } from '@/types';
 
 // Import graphique sans SSR (recharts nécessite window)
 const AirQualityChart = dynamic(
@@ -15,9 +15,6 @@ const AirQualityChart = dynamic(
 // UTILITAIRES
 // =============================================================================
 
-/**
- * Formate une date "YYYY-MM" en "Juin 2024"
- */
 const formatDate = (dateString: string): string => {
   if (!dateString) return 'Date inconnue';
   const date = new Date(`${dateString}-01`);
@@ -27,59 +24,48 @@ const formatDate = (dateString: string): string => {
   }).format(date);
 };
 
-/**
- * Trie les données : temps réel en premier, puis par mois décroissant
- */
 const sortByDateDesc = (data: AirQualityData[]): AirQualityData[] => {
   return [...data].sort((a, b) => {
-    // Temps réel toujours en premier
     if (a.is_realtime && !b.is_realtime) return -1;
     if (!a.is_realtime && b.is_realtime) return 1;
-    // Puis tri par mois décroissant
     return b.month.localeCompare(a.month);
   });
 };
 
-/**
- * Groupe les données par ville et trie chaque groupe
- */
-const groupDataByCity = (data: AirQualityData[]): GroupedAirQualityData => {
-  const groups: GroupedAirQualityData = {};
-
+function groupDataByCity(data: AirQualityData[]): Record<string, AirQualityData[]> {
+  const groups: Record<string, AirQualityData[]> = {};
   data.forEach(item => {
     const cityKey = item.city;
     if (!groups[cityKey]) groups[cityKey] = [];
     groups[cityKey].push(item);
   });
-
-  // Trier chaque groupe
   Object.keys(groups).forEach(city => {
     groups[city] = sortByDateDesc(groups[city]);
   });
-
   return groups;
-};
+}
 
-/**
- * Extrait la donnée la plus récente (temps réel) pour chaque ville
- */
-const getLatestStations = (groupedData: GroupedAirQualityData): AirQualityData[] => {
+function getLatestStations(groupedData: Record<string, AirQualityData[]>): AirQualityData[] {
   return Object.values(groupedData)
     .map(group => {
-      // Chercher d'abord une donnée temps réel
       const realtimeData = group.find(item => item.is_realtime);
       return realtimeData || group[0];
     })
     .filter(Boolean);
+}
+
+const getPM25Color = (value: number): string => {
+  if (value <= 10) return 'text-green-400';
+  if (value <= 25) return 'text-yellow-400';
+  if (value <= 50) return 'text-orange-400';
+  return 'text-red-400';
 };
 
-/**
- * Retourne la couleur selon le niveau de PM2.5
- */
-const getPM25Color = (value: number): string => {
-  if (value <= PM25_THRESHOLDS.GOOD) return 'text-green-400';
-  if (value <= PM25_THRESHOLDS.MODERATE) return 'text-yellow-400';
-  if (value <= PM25_THRESHOLDS.UNHEALTHY) return 'text-orange-400';
+const getTemperatureColor = (value: number): string => {
+  if (value <= 0) return 'text-cyan-400';
+  if (value <= 10) return 'text-blue-400';
+  if (value <= 20) return 'text-green-400';
+  if (value <= 30) return 'text-yellow-400';
   return 'text-red-400';
 };
 
@@ -108,59 +94,21 @@ function StatBox({ label, value, unit, color }: StatBoxProps) {
   );
 }
 
-interface HistoryItemProps {
-  item: AirQualityData;
-}
-
-function HistoryItem({ item }: HistoryItemProps) {
-  return (
-    <div
-      className={`
-        flex justify-between items-center p-2 rounded-lg transition-colors border
-        ${item.is_realtime
-          ? 'bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20'
-          : 'bg-white/5 border-transparent hover:bg-white/10 hover:border-white/10'}
-      `}
-    >
-      <div className="flex flex-col">
-        <span className="font-mono text-xs font-bold text-gray-300 capitalize">
-          {formatDate(item.month)}
-        </span>
-        <span className={`text-[8px] uppercase truncate w-24 ${item.is_realtime ? 'text-blue-400' : 'text-gray-500'}`}>
-          {item.is_realtime ? '🔴 Temps Réel' : 'Archive Mensuelle'}
-        </span>
-      </div>
-
-      <div className="flex gap-3 text-right">
-        <div className="w-12">
-          <div className={`font-bold text-sm ${getPM25Color(item.pm2_5)}`}>
-            {Math.round(item.pm2_5)}
-          </div>
-          <div className="text-[8px] text-gray-600">PM2.5</div>
-        </div>
-        <div className="w-12">
-          <div className="font-bold text-sm text-blue-300">
-            {Math.round(item.temperature_2m)}°
-          </div>
-          <div className="text-[8px] text-gray-600">TEMP</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // =============================================================================
 // PAGE PRINCIPALE
 // =============================================================================
 
+// Type pour le mode d'affichage
+type DisplayMode = 'pollution' | 'temperature';
+
 export default function DashboardPage() {
-  const [allData, setAllData] = useState<GroupedAirQualityData>({});
+  const [allData, setAllData] = useState<Record<string, AirQualityData[]>>({});
   const [latestStations, setLatestStations] = useState<AirQualityData[]>([]);
   const [selectedStation, setSelectedStation] = useState<AirQualityData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('pollution');
 
-  // Fetch des données
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -197,18 +145,16 @@ export default function DashboardPage() {
     fetchData();
   }, []);
 
-  // Historique trié pour la station sélectionnée
   const selectedHistory = useMemo(() => {
     if (!selectedStation) return [];
-    return allData[selectedStation.city] || [];
+    const history = allData[selectedStation.city] || [];
+    return history;
   }, [selectedStation, allData]);
 
-  // Handler de sélection mémorisé
   const handleStationSelect = useCallback((station: AirQualityData) => {
     setSelectedStation(station);
   }, []);
 
-  // État de chargement
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-screen w-screen bg-black text-white">
@@ -220,7 +166,6 @@ export default function DashboardPage() {
     );
   }
 
-  // État d'erreur
   if (error) {
     return (
       <div className="flex flex-col items-center justify-center h-screen w-screen bg-black text-white">
@@ -244,12 +189,12 @@ export default function DashboardPage() {
           stations={latestStations}
           onStationSelect={handleStationSelect}
           selectedStation={selectedStation}
+          displayMode={displayMode}
         />
       </div>
 
       {/* 2. SIDEBAR GAUCHE */}
       <div className="absolute top-4 left-4 bottom-4 w-80 z-10 flex flex-col gap-4 pointer-events-none">
-        {/* Header */}
         <div className="glass-panel p-6 rounded-2xl pointer-events-auto border-l-4 border-blue-500 shadow-2xl">
           <h1 className="text-xl font-bold tracking-tight text-white">
             AIR OBSERVATORY
@@ -257,16 +202,39 @@ export default function DashboardPage() {
           <p className="text-[10px] text-gray-400 uppercase tracking-wider font-mono mt-2">
             Réseau Hybride • {latestStations.length} Villes
           </p>
+          
+          {/* Toggle Pollution / Température */}
+          <div className="flex mt-4 bg-white/5 rounded-lg p-1">
+            <button
+              onClick={() => setDisplayMode('pollution')}
+              className={`flex-1 py-2 px-3 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${
+                displayMode === 'pollution'
+                  ? 'bg-red-500/20 text-red-400 shadow-lg'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              🌫️ Pollution
+            </button>
+            <button
+              onClick={() => setDisplayMode('temperature')}
+              className={`flex-1 py-2 px-3 rounded-md text-xs font-bold uppercase tracking-wider transition-all ${
+                displayMode === 'temperature'
+                  ? 'bg-blue-500/20 text-blue-400 shadow-lg'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              🌡️ Température
+            </button>
+          </div>
         </div>
 
-        {/* Liste des villes */}
         <div className="glass-panel flex-1 rounded-2xl overflow-hidden flex flex-col pointer-events-auto shadow-2xl">
           <div className="p-3 border-b border-white/10 bg-white/5 flex justify-between px-4">
             <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">
               Ville
             </span>
             <span className="text-[9px] font-bold uppercase tracking-widest text-gray-400">
-              Air (PM2.5)
+              {displayMode === 'pollution' ? 'Air (PM2.5)' : 'Temp (°C)'}
             </span>
           </div>
 
@@ -293,8 +261,15 @@ export default function DashboardPage() {
                     )}
                   </div>
                 </div>
-                <div className={`font-mono text-lg font-bold ${getPM25Color(station.pm2_5)}`}>
-                  {Math.round(station.pm2_5)}
+                <div className={`font-mono text-lg font-bold ${
+                  displayMode === 'pollution' 
+                    ? getPM25Color(station.pm2_5)
+                    : getTemperatureColor(station.temperature_2m)
+                }`}>
+                  {displayMode === 'pollution' 
+                    ? Math.round(station.pm2_5)
+                    : `${Math.round(station.temperature_2m)}°`
+                  }
                 </div>
               </div>
             ))}
@@ -305,7 +280,6 @@ export default function DashboardPage() {
       {/* 3. PANNEAU DROIT - Détails */}
       {selectedStation && (
         <div className="absolute top-4 right-4 bottom-4 z-10 w-96 animate-fade-in pointer-events-auto flex flex-col gap-4">
-          {/* Bloc A : Données actuelles */}
           <div className="glass-panel rounded-2xl p-6 border-t-2 border-blue-500 shadow-2xl backdrop-blur-xl shrink-0">
             <div className="flex justify-between items-start mb-6">
               <div>
@@ -352,7 +326,6 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Bloc B : Graphique & Historique */}
           <div className="glass-panel rounded-2xl flex-1 overflow-hidden flex flex-col border-t-2 border-purple-500/50">
             <div className="p-4 border-b border-white/10 bg-white/5 flex justify-between items-center">
               <h3 className="text-xs font-bold uppercase tracking-widest text-purple-300">
@@ -374,7 +347,39 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 selectedHistory.map((item, idx) => (
-                  <HistoryItem key={`${item.month}-${idx}`} item={item} />
+                  <div
+                    key={`${item.month}-${idx}`}
+                    className={`
+                      flex justify-between items-center p-2 rounded-lg transition-colors border
+                      ${item.is_realtime
+                        ? 'bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20'
+                        : 'bg-white/5 border-transparent hover:bg-white/10 hover:border-white/10'}
+                    `}
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-mono text-xs font-bold text-gray-300 capitalize">
+                        {formatDate(item.month)}
+                      </span>
+                      <span className={`text-[8px] uppercase truncate w-24 ${item.is_realtime ? 'text-blue-400' : 'text-gray-500'}`}>
+                        {item.is_realtime ? '🔴 Temps Réel' : 'Archive Mensuelle'}
+                      </span>
+                    </div>
+
+                    <div className="flex gap-3 text-right">
+                      <div className="w-12">
+                        <div className={`font-bold text-sm ${getPM25Color(item.pm2_5)}`}>
+                          {Math.round(item.pm2_5)}
+                        </div>
+                        <div className="text-[8px] text-gray-600">PM2.5</div>
+                      </div>
+                      <div className="w-12">
+                        <div className="font-bold text-sm text-blue-300">
+                          {Math.round(item.temperature_2m)}°
+                        </div>
+                        <div className="text-[8px] text-gray-600">TEMP</div>
+                      </div>
+                    </div>
+                  </div>
                 ))
               )}
             </div>
