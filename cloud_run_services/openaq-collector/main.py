@@ -8,13 +8,12 @@ from google.cloud import bigquery
 
 app = Flask(__name__)
 
-# Configuration
 PROJECT_ID = os.environ.get('PROJECT_ID')
 DATASET_NAME = os.environ.get('DATASET_NAME', 'airquality_full')
 TABLE_NAME = os.environ.get('TABLE_NAME', 'measurements_complette')
 API_KEY = os.environ.get('OPENWEATHER_API_KEY')
 
-# Client BigQuery
+
 bq_client = bigquery.Client(project=PROJECT_ID)
 table_id = f"{PROJECT_ID}.{DATASET_NAME}.{TABLE_NAME}"
 
@@ -22,9 +21,9 @@ def ensure_table_exists():
     """Crée la table si elle n'existe pas"""
     try:
         bq_client.get_table(table_id)
-        print(f"✅ Table {table_id} existe déjà")
+        print(f" Table {table_id} existe déjà")
     except Exception as e:
-        print(f"⚠️ Table n'existe pas, création en cours...")
+        print(f" Table n'existe pas, création en cours...")
         
         schema = [
             bigquery.SchemaField("city", "STRING", mode="REQUIRED"),
@@ -47,14 +46,11 @@ def ensure_table_exists():
         
         table = bigquery.Table(table_id, schema=schema)
         table = bq_client.create_table(table)
-        print(f"✅ Table {table_id} créée avec succès!")
+        print(f" Table {table_id} créée avec succès!")
 
-# Créer la table au démarrage
 ensure_table_exists()
 
-# 30 villes France + 20 villes Europe
 CITIES = [
-    # 30 plus grandes villes de France
     {"name": "Paris", "country": "FR", "lat": 48.8566, "lon": 2.3522},
     {"name": "Marseille", "country": "FR", "lat": 43.2965, "lon": 5.3698},
     {"name": "Lyon", "country": "FR", "lat": 45.7640, "lon": 4.8357},
@@ -86,7 +82,6 @@ CITIES = [
     {"name": "Metz", "country": "FR", "lat": 49.1193, "lon": 6.1757},
     {"name": "Besançon", "country": "FR", "lat": 47.2380, "lon": 6.0243},
     
-    # Grandes villes d'Europe
     {"name": "London", "country": "GB", "lat": 51.5074, "lon": -0.1278},
     {"name": "Berlin", "country": "DE", "lat": 52.5200, "lon": 13.4050},
     {"name": "Madrid", "country": "ES", "lat": 40.4168, "lon": -3.7038},
@@ -136,7 +131,6 @@ def get_historical_data(city_name, country, lat, lon):
     """Récupère les données historiques sur 2 ans"""
     url = "http://api.openweathermap.org/data/2.5/air_pollution/history"
     
-    # Calculer les timestamps pour les 2 dernières années
     now = datetime.now(timezone.utc)
     two_years_ago = int((now - timedelta(days=730)).timestamp())
     now_timestamp = int(now.timestamp())
@@ -156,7 +150,6 @@ def get_historical_data(city_name, country, lat, lon):
         
         rows = []
         if data.get('list'):
-            # Limiter à 100 mesures pour éviter trop de données
             for measurement in data['list'][:100]:
                 row = process_measurement(city_name, country, lat, lon, measurement)
                 if row:
@@ -172,14 +165,11 @@ def process_measurement(city_name, country, lat, lon, measurement):
     """Traite une mesure et la formate pour BigQuery"""
     ingestion_time = datetime.now(timezone.utc).isoformat()
     
-    # Timestamp de la mesure
     dt = measurement.get('dt')
     measurement_timestamp = datetime.fromtimestamp(dt, tz=timezone.utc).isoformat() if dt else ingestion_time
     
-    # AQI
     aqi = measurement.get('main', {}).get('aqi')
     
-    # Composants (tous en µg/m³)
     components = measurement.get('components', {})
     
     row = {
@@ -208,7 +198,6 @@ def insert_to_bigquery(rows):
     if not rows:
         return 0
     
-    # S'assurer que rows est une liste
     if not isinstance(rows, list):
         rows = [rows]
     
@@ -227,13 +216,12 @@ def collect_data():
         total_rows = 0
         results = []
         
-        # Vérifier si on veut l'historique
         collect_history = request.args.get('history', 'false').lower() == 'true'
         
         print(f"🌍 Collecte des données pour {len(CITIES)} villes (30 FR + 20 EU)...")
         if collect_history:
-            print(f"📜 Mode historique activé : 2 dernières années")
-        print(f"🔑 API Key: {API_KEY[:10]}..." if API_KEY else "⚠️ Pas de clé API!")
+            print(f" Mode historique activé : 2 dernières années")
+        print(f" API Key: {API_KEY[:10]}..." if API_KEY else " Pas de clé API!")
         
         for city in CITIES:
             print(f"📍 Traitement de {city['name']} ({city['country']})...")
@@ -250,7 +238,7 @@ def collect_data():
                 if rows:
                     inserted = insert_to_bigquery(rows)
                     total_rows += inserted
-                    print(f"✅ {city['name']}: {inserted} mesures historiques insérées")
+                    print(f" {city['name']}: {inserted} mesures historiques insérées")
                     results.append({
                         'city': city['name'],
                         'country': city['country'],
@@ -258,7 +246,7 @@ def collect_data():
                         'type': 'historical'
                     })
                 else:
-                    print(f"⚠️ {city['name']}: Aucune donnée historique disponible")
+                    print(f" {city['name']}: Aucune donnée historique disponible")
                     results.append({
                         'city': city['name'],
                         'country': city['country'],
@@ -266,7 +254,6 @@ def collect_data():
                         'type': 'historical'
                     })
             else:
-                # Récupérer les données actuelles
                 row = get_air_quality_data(
                     city['name'], 
                     city['country'], 
@@ -278,7 +265,7 @@ def collect_data():
                     inserted = insert_to_bigquery(row)
                     total_rows += inserted
                     
-                    print(f"✅ {city['name']}: 1 mesure insérée (AQI: {row.get('aqi', 'N/A')}, PM2.5: {row.get('pm2_5', 'N/A')} µg/m³)")
+                    print(f" {city['name']}: 1 mesure insérée (AQI: {row.get('aqi', 'N/A')}, PM2.5: {row.get('pm2_5', 'N/A')} µg/m³)")
                     results.append({
                         'city': city['name'],
                         'country': city['country'],
@@ -288,7 +275,7 @@ def collect_data():
                         'type': 'current'
                     })
                 else:
-                    print(f"⚠️ {city['name']}: Aucune donnée disponible")
+                    print(f" {city['name']}: Aucune donnée disponible")
                     results.append({
                         'city': city['name'],
                         'country': city['country'],
