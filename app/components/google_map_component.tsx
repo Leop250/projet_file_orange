@@ -1,0 +1,121 @@
+'use client';
+
+import React, { useState, useCallback } from 'react';
+import { GoogleMap, useJsApiLoader, OverlayView } from '@react-google-maps/api';
+import { AirQualityData } from '@/types';
+
+const mapStyles = [
+  { elementType: "geometry", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#242f3e" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#746855" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#17263c" }] },
+];
+
+const containerStyle = { width: '100%', height: '100vh' };
+const defaultCenter = { lat: 48.8566, lng: 2.3522 };
+
+type DisplayMode = 'pollution' | 'temperature';
+
+interface MapProps {
+  stations: AirQualityData[];
+  onStationSelect: (station: AirQualityData) => void;
+  selectedStation: AirQualityData | null;
+  displayMode: DisplayMode;
+}
+
+export default function GoogleMapComponent({ stations, onStationSelect, selectedStation, displayMode }: MapProps) {
+  const { isLoaded, loadError } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || ""
+  });
+
+  const [map, setMap] = useState<google.maps.Map | null>(null);
+
+  const onLoad = useCallback((map: google.maps.Map) => setMap(map), []);
+  const onUnmount = useCallback(() => setMap(null), []);
+
+  // Couleurs pour la pollution (PM2.5)
+  const getPollutionColor = (pm25: number) => {
+    if (pm25 <= 10) return "bg-teal-500 border-teal-300 shadow-[0_0_15px_rgba(20,184,166,0.6)]";
+    if (pm25 <= 25) return "bg-yellow-500 border-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.6)]";
+    if (pm25 <= 50) return "bg-orange-500 border-orange-300 shadow-[0_0_15px_rgba(249,115,22,0.6)]";
+    return "bg-red-600 border-red-400 shadow-[0_0_20px_rgba(220,38,38,0.8)] animate-pulse";
+  };
+
+  // Couleurs pour la température
+  const getTemperatureColor = (temp: number) => {
+    if (temp <= 0) return "bg-cyan-500 border-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.6)]";
+    if (temp <= 10) return "bg-blue-500 border-blue-300 shadow-[0_0_15px_rgba(59,130,246,0.6)]";
+    if (temp <= 20) return "bg-green-500 border-green-300 shadow-[0_0_15px_rgba(34,197,94,0.6)]";
+    if (temp <= 30) return "bg-yellow-500 border-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.6)]";
+    return "bg-red-600 border-red-400 shadow-[0_0_20px_rgba(220,38,38,0.8)]";
+  };
+
+  // Sélectionner la couleur selon le mode
+  const getMarkerColor = (station: AirQualityData) => {
+    return displayMode === 'pollution' 
+      ? getPollutionColor(station.pm2_5)
+      : getTemperatureColor(station.temperature_2m);
+  };
+
+  // Valeur affichée sur le marqueur
+  const getMarkerValue = (station: AirQualityData) => {
+    return displayMode === 'pollution'
+      ? Math.round(station.pm2_5)
+      : `${Math.round(station.temperature_2m)}°`;
+  };
+
+  // Tooltip du marqueur
+  const getMarkerTooltip = (station: AirQualityData) => {
+    return displayMode === 'pollution'
+      ? `PM2.5 : ${Math.round(station.pm2_5)} µg/m³ | ${station.city}`
+      : `Temp : ${Math.round(station.temperature_2m)}°C | ${station.city}`;
+  };
+
+  if (loadError) return <div className="flex items-center justify-center h-full bg-black text-red-500">Erreur de clé API</div>;
+  if (!isLoaded) return <div className="flex items-center justify-center h-full bg-black text-blue-500 animate-pulse">Chargement de la carte...</div>;
+
+  return (
+    <GoogleMap
+      mapContainerStyle={containerStyle}
+      center={defaultCenter}
+      zoom={5}
+      onLoad={onLoad}
+      onUnmount={onUnmount}
+      options={{
+        styles: mapStyles,
+        disableDefaultUI: true,
+        zoomControl: false,
+        minZoom: 3,
+      }}
+    >
+      {Array.isArray(stations) && stations.map((station, index) => (
+        <OverlayView
+          key={`${station.city}-${index}`}
+          position={{ lat: station.latitude, lng: station.longitude }}
+          mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}
+        >
+          <div
+            onClick={() => onStationSelect(station)}
+            title={getMarkerTooltip(station)}
+            className={`
+              cursor-pointer flex items-center justify-center transition-all duration-300
+              w-10 h-10 rounded-full border-2 backdrop-blur-md relative group
+              ${getMarkerColor(station)}
+              ${selectedStation?.city === station.city ? 'scale-125 z-50 ring-4 ring-white/50' : 'hover:scale-110 opacity-90'}
+            `}
+          >
+            {/* Indicateur LIVE (petit point rouge si temps réel) */}
+            {station.is_realtime && (
+               <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border border-white animate-pulse"></span>
+            )}
+
+            <span className="font-bold text-[10px] text-white drop-shadow-md">
+              {getMarkerValue(station)}
+            </span>
+          </div>
+        </OverlayView>
+      ))}
+    </GoogleMap>
+  );
+}

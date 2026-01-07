@@ -3,8 +3,6 @@ import requests
 import pandas as pd
 from datetime import datetime
 import time
-from google.cloud import storage
-import io
 
 # Mapping des codes pays vers leurs IDs OpenAQ
 COUNTRY_IDS = {
@@ -209,32 +207,6 @@ def list_available_countries():
     for code, country_id in sorted(COUNTRY_IDS.items()):
         print(f"  • {code} (ID: {country_id})")
 
-def save_to_bucket(df, bucket_name, destination_blob_name):
-    """
-    Sauvegarde un DataFrame en CSV directement dans un Bucket GCS.
-    """
-    if df.empty:
-        print("⚠️ DataFrame vide, pas d'upload.")
-        return
-
-    try:
-        # Initialisation du client GCS
-        # (Sur Cloud Run/Cloud Shell, l'auth est automatique)
-        storage_client = storage.Client()
-        bucket = storage_client.bucket(bucket_name)
-        blob = bucket.blob(destination_blob_name)
-
-        # Conversion du DataFrame en CSV (string)
-        csv_data = df.to_csv(index=False)
-
-        # Upload du contenu
-        blob.upload_from_string(csv_data, content_type='text/csv')
-        
-        print(f"✅ Fichier sauvegardé dans gs://{bucket_name}/{destination_blob_name}")
-        
-    except Exception as e:
-        print(f"❌ Erreur Upload GCS : {e}")
-
 
 if __name__ == "__main__":
     try:
@@ -293,11 +265,6 @@ if __name__ == "__main__":
             if not df_france.empty:
                 df_france = df_france.sort_values('value', ascending=False)
                 print(df_france[["city", "location_name", "value", "datetime"]].head(10).to_string(index=False))
-
-                BUCKET_NAME = "projet-orange-bucket"
-                FILE_NAME = "mesures_actuelles.csv"
-    
-                save_to_bucket(df_france, BUCKET_NAME, FILE_NAME)
 
     except Exception as e:
         print(f"❌ Erreur : {e}")

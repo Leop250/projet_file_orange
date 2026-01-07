@@ -1,0 +1,36 @@
+# Cloud Build trigger for GitHub repo Leop250/projet_file_orange (branch dev)
+# Import with: gcloud beta builds triggers import --source=cloudbuild-trigger.yaml --project=projet-fil-orange-477313
+
+name: projet-file-orange-dev
+description: Build & test on dev branch
+github:
+  owner: Leop250
+  name: projet_file_orange
+  push:
+    branch: ^dev$
+includedFiles:
+  - '**/*.py'
+  - requirements.txt
+ignoredFiles:
+  - '.gitignore'
+  - '.env'
+build:
+  substitutions:
+    _REGION: europe-west1
+    _SERVICE: projet-file-orange
+  steps:
+    - name: python:3.11
+      entrypoint: bash
+      args:
+        - -c
+        - |
+          set -euo pipefail
+          pip install --no-cache-dir -r requirements.txt
+          pytest
+  options:
+    logging: CLOUD_LOGGING_ONLY
+    defaultLogsBucketBehavior: REGIONAL_USER_OWNED_BUCKET
+  logsBucket: gs://projet-fil-orange-477313_cloudbuild/logs
+  timeout: 1200s
+# To use a custom service account, uncomment and set a valid email below; otherwise the default Cloud Build SA is used.
+# serviceAccount: projects/projet-fil-orange-477313/serviceAccounts/PROJECT_NUMBER@cloudbuild.gserviceaccount.com
