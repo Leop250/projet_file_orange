@@ -52,34 +52,34 @@ Plateforme full-stack pour la visualisation en temps réel des données de quali
 ### Vue d'Ensemble Haut Niveau
 
 ```
-┌─────────────────────────────────────────────────────────────┐
+┌──────────────────────────────────────────────────────────────┐
 │                  SOURCES DE DONNÉES EXTERNES                 │
-│  • WeatherAPI.com (Données météo actuelles)                 │
-│  • OpenWeatherMap (API qualité de l'air)                    │
-│  • Open-Meteo (Qualité de l'air historique)                 │
-│  • OpenAQ (Données de pollution alternatives)               │
+│  • WeatherAPI.com (Données météo actuelles)                  │
+│  • OpenWeatherMap (API qualité de l'air)                     │
+│  • Open-Meteo (Qualité de l'air historique)                  │
+│  • OpenAQ (Données de pollution alternatives)                │
 └────────────────────┬─────────────────────────────────────────┘
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
 │            PIPELINE ETL (Python/Flask/Cloud Run)            │
 │                                                             │
-│  ┌─────────────────────────────────────────────┐          │
-│  │  Services de Collection de Données          │          │
-│  │  • weatherapicom (main.py)                  │          │
-│  │  • openaq-collector (main.py)               │          │
-│  │  • airqualitynew (main.py)                  │          │
-│  │  • qualiteair (main.py)                     │          │
-│  └────────────────┬────────────────────────────┘          │
+│  ┌─────────────────────────────────────────────┐            │
+│  │  Services de Collection de Données          │            │
+│  │  • weatherapicom (main.py)                  │            │
+│  │  • openaq-collector (main.py)               │            │
+│  │  • airqualitynew (main.py)                  │            │
+│  │  • qualiteair (main.py)                     │            │
+│  └────────────────┬────────────────────────────┘            │
 │                   │                                         │
-│  ┌────────────────▼────────────────────────────┐          │
-│  │  Couche de Traitement des Données           │          │
-│  │  • Extraction depuis APIs REST              │          │
-│  │  • Transformation & nettoyage (pandas)      │          │
-│  │  • Validation & normalisation               │          │
-│  │  • Gestion d'erreurs & logging              │          │
-│  └────────────────┬────────────────────────────┘          │
-└───────────────────┼──────────────────────────────────────────┘
+│  ┌────────────────▼────────────────────────────┐            │
+│  │  Couche de Traitement des Données           │            │
+│  │  • Extraction depuis APIs REST              │            │
+│  │  • Transformation & nettoyage (pandas)      │            │
+│  │  • Validation & normalisation               │            │
+│  │  • Gestion d'erreurs & logging              │            │
+│  └────────────────┬────────────────────────────┘            │
+└───────────────────┼─────────────────────────────────────────┘
                     │
                     ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -87,52 +87,52 @@ Plateforme full-stack pour la visualisation en temps réel des données de quali
 │                                                             │
 │  Tables :                                                   │
 │  • weather_data.weather_records                             │
-│    → Météo en temps réel par ville                         │
+│    → Météo en temps réel par ville                          │
 │  • weather_data.weather_monthly_avg                         │
-│    → Agrégats météo historiques par pays                   │
+│    → Agrégats météo historiques par pays                    │
 │  • weather_data.weatherapicom                               │
-│    → Données brutes WeatherAPI.com                         │
+│    → Données brutes WeatherAPI.com                          │
 │  • airquality_full.measurements_complette                   │
-│    → Mesures de pollution complètes                        │
+│    → Mesures de pollution complètes                         │
 │  • air_quality_europe_monthly_avg.donne_open_meteo_*        │
-│    → Données historiques Open-Meteo                        │
+│    → Données historiques Open-Meteo                         │
 └────────────────────┬────────────────────────────────────────┘
                      │
                      ▼
 ┌─────────────────────────────────────────────────────────────┐
 │         APPLICATION WEB (Next.js 16 + React 19)             │
 │                                                             │
-│  ┌──────────────────────────────────────────────┐          │
-│  │  Couche Backend (Routes API)                 │          │
-│  │                                              │          │
-│  │  /api/weather_data/route.ts                  │          │
-│  │  • Authentification Google Cloud             │          │
-│  │  • Requêtes BigQuery optimisées              │          │
-│  │  • Fusion de données multi-sources           │          │
-│  │  • Mise en cache & optimisation réponses     │          │
-│  └────────────────┬─────────────────────────────┘          │
+│  ┌──────────────────────────────────────────────┐           │
+│  │  Couche Backend (Routes API)                 │           │
+│  │                                              │           │
+│  │  /api/weather_data/route.ts                  │           │
+│  │  • Authentification Google Cloud             │           │
+│  │  • Requêtes BigQuery optimisées              │           │
+│  │  • Fusion de données multi-sources           │           │
+│  │  • Mise en cache & optimisation réponses     │           │
+│  └────────────────┬─────────────────────────────┘           │
 │                   │                                         │
-│  ┌────────────────▼─────────────────────────────┐          │
-│  │  Couche Frontend (Composants React)          │          │
-│  │                                              │          │
-│  │  app/page.tsx                                │          │
-│  │  • Orchestration du tableau de bord          │          │
-│  │  • Gestion d'état                            │          │
-│  │  • Récupération & cache des données          │          │
-│  │                                              │          │
-│  │  components/                                 │          │
-│  │  • google_map_component.tsx                  │          │
-│  │    → Intégration Google Maps interactive     │          │
-│  │    → Mise à jour des marqueurs en temps réel │          │
-│  │  • air_quality_chart_component.tsx           │          │
-│  │    → Visualisations Recharts                 │          │
-│  │    → Analyse des tendances historiques       │          │
-│  │                                              │          │
-│  │  types/index.ts                              │          │
-│  │  • Interfaces TypeScript                     │          │
-│  │  • Définitions de types pour réponses API    │          │
-│  │  • Modèles de données partagés               │          │
-│  └──────────────────────────────────────────────┘          │
+│  ┌────────────────▼─────────────────────────────┐           │
+│  │  Couche Frontend (Composants React)          │           │
+│  │                                              │           │
+│  │  app/page.tsx                                │           │
+│  │  • Orchestration du tableau de bord          │           │
+│  │  • Gestion d'état                            │           │
+│  │  • Récupération & cache des données          │           │
+│  │                                              │           │
+│  │  components/                                 │           │
+│  │  • google_map_component.tsx                  │           │
+│  │    → Intégration Google Maps interactive     │           │
+│  │    → Mise à jour des marqueurs en temps réel │           │
+│  │  • air_quality_chart_component.tsx           │           │
+│  │    → Visualisations Recharts                 │           │
+│  │    → Analyse des tendances historiques       │           │
+│  │                                              │           │
+│  │  types/index.ts                              │           │
+│  │  • Interfaces TypeScript                     │           │
+│  │  • Définitions de types pour réponses API    │           │
+│  │  • Modèles de données partagés               │           │
+│  └──────────────────────────────────────────────┘           │
 └─────────────────────────────────────────────────────────────┘
 ```
 
