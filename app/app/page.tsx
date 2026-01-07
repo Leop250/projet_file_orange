@@ -269,7 +269,7 @@ export default function DashboardPage() {
       <div className="absolute top-4 left-4 bottom-4 w-80 z-10 flex flex-col gap-4 pointer-events-none">
         <div className="glass-panel p-6 rounded-2xl pointer-events-auto border-l-4 border-blue-500 shadow-2xl">
           <h1 className="text-xl font-bold tracking-tight text-white">
-            OBSERVATOIRE DE L'AIR
+            AeroScope - Observateur de l'air
           </h1>
           <p className="text-[10px] text-gray-400 uppercase tracking-wider font-mono mt-2">
             Réseau Hybride • {latestStations.length} Villes
