@@ -1,0 +1,12 @@
+steps:
+  - name: python:3.11
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+        pip install --no-cache-dir -r requirements.txt
+        pytest
+
+# Optionally set a longer timeout if tests take time
+# timeout: 1200s
