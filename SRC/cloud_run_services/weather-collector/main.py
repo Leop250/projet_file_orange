@@ -8,15 +8,12 @@ import logging
 app = Flask(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# Configuration
 API_KEY = os.environ.get('WEATHER_API_KEY')
 PROJECT_ID = os.environ.get('GCP_PROJECT')
 DATASET_ID = "weather_data"
 TABLE_ID = "weather_records"
 
-# 30 plus grandes villes de France + grandes villes d'Europe
 CITIES = [
-    # 30 plus grandes villes de France
     {"name": "Paris", "country": "FR", "lat": 48.8566, "lon": 2.3522},
     {"name": "Marseille", "country": "FR", "lat": 43.2965, "lon": 5.3698},
     {"name": "Lyon", "country": "FR", "lat": 45.7640, "lon": 4.8357},
@@ -75,7 +72,6 @@ def create_bigquery_table():
     """Crée la table BigQuery si elle n'existe pas"""
     client = bigquery.Client(project=PROJECT_ID)
     
-    # Créer le dataset
     dataset_ref = f"{PROJECT_ID}.{DATASET_ID}"
     try:
         client.get_dataset(dataset_ref)
@@ -86,7 +82,6 @@ def create_bigquery_table():
         client.create_dataset(dataset)
         print(f"Dataset {DATASET_ID} créé")
     
-    # Créer la table
     table_ref = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
     
     schema = [
