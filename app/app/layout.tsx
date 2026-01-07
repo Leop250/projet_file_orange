@@ -5,8 +5,8 @@ import "./globals.css"; // L'import indispensable
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Air Observatory",
-  description: "Dashboard Temps Réel - BigQuery & Google Maps",
+  title: "AeroScope",
+  description: "Observatoire de la qualité de l'air en Europe",
 };
 
 export default function RootLayout({
